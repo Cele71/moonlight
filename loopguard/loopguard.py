@@ -396,7 +396,8 @@ class Cycle:
         return d
 
 
-def split_cycles(text: str, source: str, start_re: re.Pattern, end_re: re.Pattern) -> list[Cycle]:
+def split_cycles(text: str, source: str, start_re: re.Pattern, end_re: re.Pattern,
+                 orphan_ends: list[str] | None = None) -> list[Cycle]:
     """Carve a log file into cycles.
 
     A cycle runs from a start marker to the next end marker. A start with no
@@ -407,14 +408,28 @@ def split_cycles(text: str, source: str, start_re: re.Pattern, end_re: re.Patter
     interrupted by the next start -- the shape a hard kill leaves -- was
     appended with no end, no rc and no flag, and printed as `ok ... ? rc=?`.
     The tool said "I cannot tell what happened here" and counted it healthy.
+
+    ⚠ An end marker arriving with no cycle open used to be dropped on the
+    floor, silently. That is the signature of two loops writing to one file,
+    and it matters because of what the report says instead: the first loop's
+    start is followed by the second loop's start, so the first is declared
+    "killed, not finished" -- an assertion, about a run that was fine.
+    Unmatched end markers are collected into `orphan_ends` so a caller can say
+    the shape of the file does not support that reading. Each is recorded with
+    whether a start had already been seen: an end marker *before* the first
+    start is a log that begins mid-cycle, which is what rotation looks like and
+    is not worth alarming anyone about. One after a start is not explicable
+    that way.
     """
     cycles: list[Cycle] = []
     current: Cycle | None = None
     buf: list[str] = []
+    seen_start = False
 
     for line in text.splitlines():
         m_start = start_re.search(line)
         if m_start:
+            seen_start = True
             if current is not None:
                 current.body = "\n".join(buf)
                 current.unfinished = True
@@ -426,6 +441,10 @@ def split_cycles(text: str, source: str, start_re: re.Pattern, end_re: re.Patter
             continue
 
         m_end = end_re.search(line)
+        if m_end and current is None:
+            if orphan_ends is not None:
+                orphan_ends.append({"ts": m_end.group("ts"), "after_a_start": seen_start})
+            continue
         if m_end and current is not None:
             current.ended = _parse_ts(m_end.group("ts"))
             try:
@@ -582,20 +601,35 @@ def check_staleness(cycles: list[Cycle], now: datetime,
             f"(last start {last:%Y-%m-%d %H:%M}; {because})")
 
 
-def flag_abandoned(cycles: list[Cycle]) -> None:
+def flag_abandoned(cycles: list[Cycle], interleaved: set[str] | None = None) -> None:
     """Mark cycles that never wrote an end marker *and* were overtaken.
 
     An unfinished cycle at the end of the log is usually the one running right
     now -- often the very cycle calling loopguard. An unfinished cycle with a
     later start after it is not running: something killed it hard enough that
     it never wrote its own footer, and nothing said so at the time.
+
+    ⚠ Unless two loops share the file. Then start-A, start-B, end-A, end-B is
+    the normal shape of a healthy pair, and reading it left to right says A was
+    killed. `interleaved` names the files where unmatched end markers prove
+    that reading is unavailable, and there the finding is stated as a doubt
+    rather than as a verdict. Downgraded, not dropped: a real kill in an
+    interleaved file still needs to be visible.
     """
     starts = [c.started for c in cycles if c.started]
+    interleaved = interleaved or set()
     for c in cycles:
         if not c.unfinished or c.started is None:
             continue
         later = [t for t in starts if t > c.started]
         if not later:
+            continue
+        if c.source in interleaved:
+            c.notes.append(
+                f"no end marker before the next start ({min(later):%Y-%m-%d %H:%M}), but this "
+                "file also has end markers with no start - if two loops write here, that is "
+                "the normal shape and this run may have finished fine"
+            )
             continue
         c.abandoned = True
         c.problems.append(
@@ -1033,8 +1067,14 @@ def main(argv: list[str] | None = None) -> int:
 
     cycles: list[Cycle] = []
     unread: list[tuple[str, str]] = []
+    interleaved: dict[str, list[str]] = {}
     for name, text in logs:
-        found = split_cycles(text, name, start_re, end_re)
+        orphans: list[dict] = []
+        found = split_cycles(text, name, start_re, end_re, orphans)
+        # Only the ones a truncated head cannot explain.
+        orphans = [o for o in orphans if o["after_a_start"]]
+        if orphans:
+            interleaved[name] = orphans
         if found:
             cycles.extend(found)
         else:
@@ -1102,7 +1142,7 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"loopguard: {stale}", file=sys.stderr)
             return 1
 
-    flag_abandoned(cycles)
+    flag_abandoned(cycles, set(interleaved))
     for c in cycles:
         judge(c, args.timeout, args.min_output)
     flag_repeats(cycles)
@@ -1118,14 +1158,32 @@ def main(argv: list[str] | None = None) -> int:
                 "files_without_cycles": [n for n, _ in unread],
                 "flat": [s.as_dict() for s in scans],
                 "cycles_excluded_by_since": excluded,
+                "unmatched_end_markers": {os.path.basename(k): v
+                                          for k, v in interleaved.items()},
             },
             ensure_ascii=False, indent=2,
         ))
     else:
         print(render(cycles, advice, stale, scans))
+        for name, orphans in interleaved.items():
+            # Said out loud rather than folded into the cycle list. The reader
+            # needs to know the *file* cannot be trusted to pair up, not just
+            # that one run looks odd.
+            print(f"\n?  {os.path.basename(name)}: {len(orphans)} end marker(s) with no cycle "
+                  f"open (first at {orphans[0]['ts']}).\n"
+                  "   Either the log lost its head, or more than one loop writes to this "
+                  "file.\n"
+                  "   If it is the second, durations here pair the wrong start with the wrong\n"
+                  "   end - give each loop its own file, or a --start-re that names it.",
+                  file=sys.stderr)
 
+    # ⚠ An interleaved file is not a clean bill of health. Its durations pair
+    # somebody else's start with this loop's end, and every per-cycle verdict
+    # downstream is computed from those durations. Exiting 0 here would be the
+    # fourth time a finding existed and the number the cron line reads did not
+    # carry it.
     return 1 if (stale or any(not c.ok for c in cycles)
-                 or any(s.findings for s in scans)) else 0
+                 or any(s.findings for s in scans) or interleaved) else 0
 
 
 if __name__ == "__main__":

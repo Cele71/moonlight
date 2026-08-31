@@ -937,5 +937,80 @@ class SyslogTimestampTest(unittest.TestCase):
         self.assertTrue(scan.as_dict()["year_assumed"])
 
 
+class UnmatchedEndMarkerTest(unittest.TestCase):
+    """An end marker arriving with no cycle open.
+
+    Two very different causes, and telling them apart is the whole check:
+    before the first start it is a rotated log beginning mid-cycle, which is
+    ordinary; after a start it is two loops sharing a file, and then every
+    duration in the report pairs one loop's start with the other's end.
+    """
+
+    INTERLEAVED = "\n".join([
+        "===== 2026-09-01 01:00:00 JST cycle start =====",
+        "loop A, with enough output written into the log that the thin-output rule does not fire on this cycle at all",
+        "===== 2026-09-01 01:01:00 JST cycle start =====",
+        "loop B, likewise carrying plenty of output written down so that nothing else in this report fires either",
+        "===== 2026-09-01 01:05:00 JST cycle end rc=0 =====",
+        "===== 2026-09-01 01:30:00 JST cycle end rc=0 =====",
+    ])
+    ROTATED = "\n".join([
+        "===== 2026-09-01 00:30:00 JST cycle end rc=0 =====",
+        "===== 2026-09-01 01:00:00 JST cycle start =====",
+        "the rest of a perfectly ordinary cycle, carrying output well past the minimum so that only the check under test can fire",
+        "===== 2026-09-01 01:20:00 JST cycle end rc=0 =====",
+    ])
+
+    def _orphans(self, text):
+        orphans = []
+        lg.split_cycles(text, "test.log", START, END, orphans)
+        return orphans
+
+    def test_an_orphan_end_is_collected_not_dropped(self):
+        # Before 0.6.0 this line was discarded with no trace anywhere.
+        orphans = self._orphans(self.INTERLEAVED)
+        self.assertEqual(len(orphans), 1)
+        self.assertTrue(orphans[0]["after_a_start"])
+
+    def test_an_orphan_before_any_start_is_marked_as_such(self):
+        orphans = self._orphans(self.ROTATED)
+        self.assertEqual(len(orphans), 1)
+        self.assertFalse(orphans[0]["after_a_start"])
+
+    def test_a_clean_log_has_no_orphans(self):
+        self.assertEqual(self._orphans(self.ROTATED.split("\n", 1)[1]), [])
+
+    def test_interleaving_downgrades_the_killed_verdict(self):
+        cycles = lg.split_cycles(self.INTERLEAVED, "test.log", START, END)
+        lg.flag_abandoned(cycles, {"test.log"})
+        first = cycles[0]
+        self.assertFalse(first.abandoned)
+        self.assertEqual(first.problems, [])
+        self.assertTrue(any("may have finished fine" in n for n in first.notes))
+
+    def test_without_interleaving_the_killed_verdict_stands(self):
+        # The downgrade must not become a blanket excuse: a real hard kill in a
+        # single-loop file is still a problem.
+        cycles = lg.split_cycles(self.INTERLEAVED, "test.log", START, END)
+        lg.flag_abandoned(cycles)
+        self.assertTrue(cycles[0].abandoned)
+        self.assertTrue(any("killed, not finished" in p for p in cycles[0].problems))
+
+    def test_an_interleaved_file_does_not_exit_zero(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "mixed.log")
+            with io.open(path, "w", encoding="utf-8") as fh:
+                fh.write(self.INTERLEAVED)
+            self.assertEqual(lg.main([path, "--timeout", "600"]), 1)
+
+    def test_a_rotated_file_still_exits_zero(self):
+        # The false alarm this check must not raise. Log rotation is normal.
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "rotated.log")
+            with io.open(path, "w", encoding="utf-8") as fh:
+                fh.write(self.ROTATED)
+            self.assertEqual(lg.main([path, "--timeout", "600"]), 0)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

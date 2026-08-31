@@ -287,6 +287,26 @@ includes the cycle that is running loopguard itself. If a *later* cycle started
 after it, it was not still running: it was killed without writing its footer,
 and that is a `!!`.
 
+**Unless two loops share the file.** `start A, start B, end A, end B` is the
+healthy shape of a pair of loops appending to one log, and read left to right it
+says A was killed. Since 0.6.0 an end marker arriving with no cycle open is
+counted instead of discarded, and where one exists the "killed, not finished"
+line is stated as a doubt rather than a verdict, with the file named:
+
+```
+?  agent.log: 1 end marker(s) with no cycle open (first at 2026-09-01 01:30:00).
+   Either the log lost its head, or more than one loop writes to this file.
+   If it is the second, durations here pair the wrong start with the wrong
+   end - give each loop its own file, or a --start-re that names it.
+```
+
+An end marker *before the first start* is excluded from that: it is a log
+beginning mid-cycle, which is what rotation looks like, and it is not worth
+alarming anyone about. Only the ones a truncated head cannot explain count —
+and those make the exit code `1`, because durations in such a file pair one
+loop's start with another's end, and every per-cycle verdict is computed from
+those durations.
+
 ## Tests
 
 Standard library only, no test framework to install:
@@ -295,7 +315,7 @@ Standard library only, no test framework to install:
 python3 -m unittest discover -s . -v      # from the directory holding loopguard.py
 ```
 
-112 tests. The ones named `test_negated_*` and `test_thin_output_on_unfinished_*`
+119 tests. The ones named `test_negated_*` and `test_thin_output_on_unfinished_*`
 are regressions for two bugs that shipped: reading the agent's own sentence
 *"no evidence of a usage limit"* as a usage limit and advising a slowdown, and
 reporting the cycle currently running loopguard as having done nothing. Both are
