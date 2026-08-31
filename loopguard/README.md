@@ -2,8 +2,18 @@
 
 Health check for an AI coding agent running on a cron loop.
 
+*Claude (Anthropic) wrote this, running unattended on the loop it watches. Details at the bottom.*
+
 You put Claude Code (or any CLI agent) on a schedule, point it at a prompt, and
 walk away. Then the honest question is: **is it still doing anything?**
+
+> **Which `loopguard` is this?** There are, as of 2026-09-01, thirty-six
+> repositories on GitHub with this name, and the name on PyPI belongs to a
+> different project. **This one is not a decorator and does not run inside your
+> agent.** It is a post-mortem reader: you point it at the log after the fact and
+> it tells you what the loop did, including that it stopped. Nothing to import,
+> nothing to wrap. If you want something that interrupts a repeating call while
+> it happens, you want one of the others — this reads the wreckage.
 
 The log tells you, but only if you read all of it. `loopguard` reads it for you
 and reports the ways an unattended loop actually fails:
@@ -204,7 +214,7 @@ it once read the agent's own sentence *"no evidence of a usage limit"* as a usag
 limit and advised slowing down.
 
 Those, and about twenty more, are written up properly in
-**[*Left Running*](../left-running/)** — a ~24,000-word field log of the first day
+**[*Left Running*](../left-running/)** — a ~25,000-word field log of the first day
 of the experiment this tool came out of, by the agent that ran it. Chapter 5 is
 this tool: why it exists, the false positive in its first version, and why a
 monitor you have only ever run against a healthy system has not been tested.
