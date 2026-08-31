@@ -55,7 +55,7 @@ from dataclasses import dataclass, field, asdict
 from datetime import date, datetime, timedelta, timezone
 from typing import Iterable, Iterator
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 # --- how a cycle is delimited in the log ------------------------------------
 # The defaults match a loop that brackets each run with a start and end line,
@@ -76,6 +76,32 @@ TS_CLOCK = r"\d{2}:\d{2}:\d{2}"
 # table this tool has no business carrying.
 TS_TAIL = r"(?:[.,]\d{1,9})?(?:Z|[+-]\d{2}:?\d{2})?"
 TS_REGEX = TS_DATE + r"[ T]" + TS_CLOCK + TS_TAIL
+
+# syslog / journalctl: `Sep  1 03:37:57`. No year, ever. This is the default
+# format of the one place an unattended loop's output most often ends up -
+# journald, /var/log/syslog, anything shipped through rsyslog - so a tool that
+# cannot read it cannot answer its own headline question ("has the loop
+# stopped?") for a large share of the people it is for.
+#
+# ⚠ The year has to be guessed, and a guess is not a reading. It is inferred
+# from the clock at scan time and, wherever it is used, it is reported as
+# assumed. The alternative - silently picking the current year - puts a line
+# from last December three hundred days in the future and calls the silence
+# negative, which is the failure mode of printing an unknown as a fact.
+MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+          "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+TS_SYSLOG = r"(?:" + "|".join(MONTHS) + r")\s{1,2}\d{1,2} " + TS_CLOCK + r"(?:[.,]\d{1,9})?"
+TS_SYSLOG_RE = re.compile(
+    r"^(?P<mon>" + "|".join(MONTHS) + r")\s{1,2}(?P<day>\d{1,2}) "
+    r"(?P<clock>\d{2}:\d{2}:\d{2})(?:[.,]\d{1,9})?$")
+# How far ahead of the reading clock a syslog line may sit before the year is
+# taken to be the previous one. A day absorbs clock skew and timezone
+# differences between the writer and the reader without absorbing a genuinely
+# old line.
+SYSLOG_FUTURE_TOLERANCE = timedelta(days=1)
+# How far back the year search may go. One would do for every stamp except
+# `Feb 29`, which read in a non-leap year is at least two years old.
+SYSLOG_YEARS_BACK = 4
 
 DEFAULT_START_RE = r"=+\s*(?P<ts>" + TS_REGEX + r")[^=]*?(?:start|開始)"
 DEFAULT_END_RE = r"=+\s*(?P<ts>" + TS_REGEX + r")[^=]*?(?:end|終了)[^=]*?rc=(?P<rc>-?\d+)"
@@ -245,7 +271,9 @@ TS_PATTERN = r"(?P<ts>" + TS_REGEX + r")"
 # The broad pattern above is for commands the reader copies; this short one is
 # for the "e.g." lines, which the reader has to actually read.
 TS_PATTERN_HINT = r"(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})"
-TS_ANY_RE = re.compile(TS_REGEX)
+# ⚠ Both shapes. This is what flat_scan reads, and flat_scan answers the one
+# question the tool exists for, so narrowing it is narrowing the tool.
+TS_ANY_RE = re.compile(TS_REGEX + "|" + TS_SYSLOG)
 
 # Ordered: the first word that appears in a file is the one suggested.
 START_WORDS = ["cycle start", "run start", "start", "starting", "begin", "beginning",
@@ -275,14 +303,52 @@ def _offset(raw: str) -> timedelta:
     return delta if raw[0] == "+" else -delta
 
 
-def _parse_ts(raw: str) -> datetime | None:
+def _parse_syslog_ts(raw: str, now: datetime) -> datetime | None:
+    """`Sep  1 03:37:57` as a datetime, with the year inferred from `now`.
+
+    The year is the one that puts the stamp at or before `now` (plus a day of
+    tolerance for skew). A line dated a month ahead of the reader is far more
+    likely to be from last year than from next month.
+
+    ⚠ Returns a real datetime for a stamp that did not carry a year. Callers
+    that show the result to a person must say the year was assumed; the value
+    itself cannot carry that, so `syslog_year_assumed` below is how the scan
+    remembers to.
+    """
+    m = TS_SYSLOG_RE.match(raw.strip())
+    if not m:
+        return None
+    month = MONTHS.index(m["mon"]) + 1
+    # Latest year first, so the answer is the most recent date the stamp could
+    # be. The walk goes back further than one year only because `Feb 29` read
+    # in a non-leap year has no reading nearer than two - not because a log
+    # five years old is expected.
+    for year in range(now.year + 1, now.year - SYSLOG_YEARS_BACK - 1, -1):
+        try:
+            dt = datetime.strptime(
+                f"{year}-{month:02d}-{int(m['day']):02d} {m['clock']}",
+                "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            continue  # 29 Feb in a year that has none, or 31 Sep
+        if dt <= now + SYSLOG_FUTURE_TOLERANCE:
+            return dt
+    return None
+
+
+def _parse_ts(raw: str, now: datetime | None = None) -> datetime | None:
     """A naive local datetime, or None if this is not a timestamp we can read.
 
     Everything downstream compares against `datetime.now()`, which is naive
     local, so a stamp carrying an offset is converted rather than trusted as
     wall clock. Without that, a UTC log read at JST reports six hours of
     silence that never happened.
+
+    `now` is only consulted for year-less (syslog) stamps. It is a parameter
+    rather than a call to datetime.now() so that a test can pin it.
     """
+    syslog = _parse_syslog_ts(raw, now or datetime.now())
+    if syslog is not None:
+        return syslog
     m = TS_PARSE_RE.match(raw.strip().replace("/", "-"))
     if not m:
         return None
@@ -752,6 +818,10 @@ class FlatScan:
     stale: str | None = None          # set only when silence could be judged
     limit: str | None = None
     auth: str | None = None
+    # True when the last line's date came from a syslog stamp, which carries no
+    # year. The datetime looks exactly as confident as any other; this flag is
+    # the only thing that stops the report presenting a guess as a reading.
+    year_assumed: bool = False
 
     @property
     def findings(self) -> list[str]:
@@ -779,12 +849,13 @@ def flat_scan(name: str, text: str, now: datetime,
         if not m:
             continue
         scan.stamped_lines += 1
-        ts = _parse_ts(m.group(0))
+        raw = m.group(0)
+        ts = _parse_ts(raw, now)
         if ts:
-            stamps.append(ts)
+            stamps.append((ts, TS_SYSLOG_RE.match(raw.strip()) is not None))
 
     if stamps:
-        scan.last_activity = max(stamps)
+        scan.last_activity, scan.year_assumed = max(stamps)
         silence = (now - scan.last_activity).total_seconds()
         if silence >= 0:
             scan.silence_s = silence
@@ -822,6 +893,9 @@ def render_flat(scans: list[FlatScan], stale_after_s: int | None) -> str:
         else:
             lines.append(f"      .  last line at {scan.last_activity:%Y-%m-%d %H:%M}"
                          + (f", {_dur(scan.silence_s)} ago" if scan.silence_s is not None else ""))
+            if scan.year_assumed:
+                lines.append("      ?  that stamp is syslog format and carries no year - "
+                             f"{scan.last_activity:%Y} is assumed")
             if scan.stale:
                 lines.append(f"      !! {scan.stale}")
             elif scan.silence_s is None:

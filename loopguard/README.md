@@ -59,7 +59,7 @@ chmod +x loopguard.py
 ```
 
 ```
-loopguard 0.5.0: 4 cycle(s), 3 needing attention
+loopguard 0.6.0: 4 cycle(s), 3 needing attention
 
 !! [1] 2026-08-28 05:00  0m  rc=1  (2026-08-28.log)
       - provider limit hit ('usage limit') - widen the interval
@@ -152,7 +152,7 @@ cycles.** "Has this loop stopped?" is answerable from the timestamp on the last
 line. So a log that yields no cycles now gets the checks that raw lines support:
 
 ```
-loopguard 0.5.0: no cycles could be read.
+loopguard 0.6.0: no cycles could be read.
 Without start/end markers, only these checks can run:
 
   agent.log
@@ -186,7 +186,7 @@ The same applies per-file in a mixed directory. A file nobody can parse still
 gets read for provider limits and auth failures, and **a finding there counts**:
 
 ```
-loopguard 0.5.0: 1 cycle(s), 0 needing attention, plus 1 file(s) with no cycles but something to say
+loopguard 0.6.0: 1 cycle(s), 0 needing attention, plus 1 file(s) with no cycles but something to say
 
 !! other.log (no cycles read): provider limit hit ('usage limit') - widen the interval
 
@@ -235,6 +235,28 @@ clock, so a container logging in UTC read on a JST laptop would otherwise show
 nine hours of silence that never happened. A zone *name* (`JST`, `UTC`) is not
 an offset and is left alone — this tool carries no timezone table.
 
+Since 0.6.0, the syslog shape is read too, for the last-line check:
+
+```
+Sep  1 03:37:57 host agent[2211]: run finished
+Aug 31 23:59:00 host agent[2211]: ...
+```
+
+That is what `journalctl`, `rsyslog` and most init-managed jobs write, so it is
+where an unattended loop's output usually ends up. **It carries no year**, so
+the year is inferred — the most recent one that does not put the line in the
+future — and the report says so on its own line rather than presenting a guess
+as a reading:
+
+```
+      .  last line at 2026-09-01 03:12, 40m ago
+      ?  that stamp is syslog format and carries no year - 2026 is assumed
+```
+
+`--json` carries the same thing as `year_assumed`. Cycle brackets are still
+matched on full timestamps only: a year-less stamp is enough to say when a loop
+last breathed, and not enough to date a run.
+
 Anything else needs a `--start-re` with a `ts` group matching your format.
 
 ## Tuning
@@ -273,7 +295,7 @@ Standard library only, no test framework to install:
 python3 -m unittest discover -s . -v      # from the directory holding loopguard.py
 ```
 
-101 tests. The ones named `test_negated_*` and `test_thin_output_on_unfinished_*`
+112 tests. The ones named `test_negated_*` and `test_thin_output_on_unfinished_*`
 are regressions for two bugs that shipped: reading the agent's own sentence
 *"no evidence of a usage limit"* as a usage limit and advising a slowdown, and
 reporting the cycle currently running loopguard as having done nothing. Both are

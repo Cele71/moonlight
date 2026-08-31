@@ -863,5 +863,79 @@ class QuotedMentionsReachTheVerdict(unittest.TestCase):
         self.assertIn("provider limit", s)
 
 
+class SyslogTimestampTest(unittest.TestCase):
+    """`Sep  1 03:37:57` - the format with no year in it.
+
+    The tool's headline question is "has the loop stopped?", and the answer
+    needs one thing: when the last line was written. journald and rsyslog write
+    the majority of the world's unattended-job logs and they write no year, so
+    every one of those files was previously "no readable timestamp".
+
+    Each rule below is exercised against the input it is meant to reject as
+    well as the one it is meant to read [B20].
+    """
+
+    NOW = datetime(2026, 9, 1, 12, 0, 0)
+
+    def test_a_syslog_stamp_is_read(self):
+        self.assertEqual(lg._parse_ts("Sep  1 03:37:57", self.NOW),
+                         datetime(2026, 9, 1, 3, 37, 57))
+
+    def test_a_two_digit_day_with_one_space_is_read(self):
+        self.assertEqual(lg._parse_ts("Aug 31 23:59:00", self.NOW),
+                         datetime(2026, 8, 31, 23, 59, 0))
+
+    def test_a_month_later_in_the_year_is_taken_as_last_year(self):
+        # December, read in September. Choosing this year would place the line
+        # three months in the future and make the silence negative.
+        self.assertEqual(lg._parse_ts("Dec 25 01:02:03", self.NOW),
+                         datetime(2025, 12, 25, 1, 2, 3))
+
+    def test_a_stamp_just_ahead_of_the_clock_is_still_this_year(self):
+        # Clock skew between the writer and the reader must not cost a year.
+        self.assertEqual(lg._parse_ts("Sep  1 18:00:00", self.NOW),
+                         datetime(2026, 9, 1, 18, 0, 0))
+
+    def test_the_29th_of_february_lands_on_a_leap_year(self):
+        self.assertEqual(lg._parse_ts("Feb 29 12:00:00", datetime(2026, 3, 1, 0, 0, 0)),
+                         datetime(2024, 2, 29, 12, 0, 0))
+
+    def test_prose_that_looks_like_a_month_is_not_a_timestamp(self):
+        # The one that would be silent: a wrong reading is worse than none.
+        for text in ("Sept 1 03:37:57", "Sep 1 3:37:57", "Sepia 1 03:37:57",
+                     "Sep 100 03:37:57", "May be 12:00:00"):
+            self.assertIsNone(lg._parse_ts(text, self.NOW), text)
+
+    def test_a_full_timestamp_still_wins(self):
+        self.assertEqual(lg._parse_ts("2026-08-31 05:00:01", self.NOW),
+                         datetime(2026, 8, 31, 5, 0, 1))
+
+    def test_a_syslog_log_gets_a_last_line_and_a_staleness_verdict(self):
+        text = "\n".join([
+            "Sep  1 03:00:00 host agent[1]: cycle starting",
+            "Sep  1 03:04:11 host agent[1]: done",
+        ])
+        scan = lg.flat_scan("syslog", text, self.NOW, stale_after_s=3600)
+        self.assertEqual(scan.stamped_lines, 2)
+        self.assertEqual(scan.last_activity, datetime(2026, 9, 1, 3, 4, 11))
+        self.assertIsNotNone(scan.stale)
+
+    def test_a_guessed_year_is_reported_as_guessed(self):
+        # A datetime cannot carry "I made this up". The report has to.
+        scan = lg.flat_scan("syslog", "Sep  1 03:04:11 host agent[1]: done", self.NOW)
+        self.assertTrue(scan.year_assumed)
+        out = lg.render_flat([scan], None)
+        self.assertIn("no year", out)
+
+    def test_a_dated_log_is_not_marked_as_guessed(self):
+        scan = lg.flat_scan("dated", "2026-09-01 03:04:11 done", self.NOW)
+        self.assertFalse(scan.year_assumed)
+        self.assertNotIn("no year", lg.render_flat([scan], None))
+
+    def test_the_json_report_carries_the_flag(self):
+        scan = lg.flat_scan("syslog", "Sep  1 03:04:11 done", self.NOW)
+        self.assertTrue(scan.as_dict()["year_assumed"])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
