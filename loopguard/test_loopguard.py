@@ -624,5 +624,159 @@ class AbandonedCycles(unittest.TestCase):
         self.assertIn("killed, not finished", out.getvalue())
 
 
+class TimestampShapes(unittest.TestCase):
+    """0.4.0: two accepted formats was a parochial choice, not a design.
+
+    An unreadable timestamp is not a partial loss here - it removes the cycle's
+    start time, and a cycle with no start time cannot be dated, ordered, or
+    checked for silence. So the shapes other loggers actually emit are read.
+    """
+
+    def test_slash_dates(self):
+        self.assertEqual(lg._parse_ts("2026/08/31 05:00:01"),
+                         datetime(2026, 8, 31, 5, 0, 1))
+
+    def test_fractional_seconds_are_dropped_not_rejected(self):
+        self.assertEqual(lg._parse_ts("2026-08-31T05:00:01.123456"),
+                         datetime(2026, 8, 31, 5, 0, 1))
+        self.assertEqual(lg._parse_ts("2026-08-31 05:00:01,123"),
+                         datetime(2026, 8, 31, 5, 0, 1))
+
+    def test_offset_is_applied_not_ignored(self):
+        # The whole point: everything downstream compares against a naive local
+        # now(), so a UTC log read on a +09:00 machine must not look 9h stale.
+        utc = lg._parse_ts("2026-08-31T20:00:00Z")
+        plus9 = lg._parse_ts("2026-09-01T05:00:00+09:00")
+        plus9_compact = lg._parse_ts("2026-09-01T05:00:00+0900")
+        self.assertEqual(utc, plus9)
+        self.assertEqual(utc, plus9_compact)
+
+    def test_a_zone_name_is_not_an_offset(self):
+        # 'JST' is a label this tool has no table for. It is left alone rather
+        # than guessed at - the ts group in the default markers stops before it.
+        m = re.compile(lg.DEFAULT_START_RE, re.IGNORECASE).search(
+            "===== 2026-08-31 05:00:01 JST cycle start =====")
+        self.assertEqual(m.group("ts"), "2026-08-31 05:00:01")
+
+    def test_shaped_like_a_date_but_is_not_one(self):
+        self.assertIsNone(lg._parse_ts("2026-13-45 05:00:01"))
+
+    def test_default_markers_still_read_this_loops_own_log(self):
+        cycles = cycles_of(log(("2026-08-31 05:00:01", "x" * 200, 0)))
+        self.assertEqual(len(cycles), 1)
+        self.assertEqual(cycles[0].started, datetime(2026, 8, 31, 5, 0, 1))
+
+
+class MarkerlessLogs(unittest.TestCase):
+    """0.4.0: a log with no cycle brackets used to get exit 2 and no answer.
+
+    'Has the loop stopped?' is answerable from the last line's timestamp. It
+    does not need cycles. Declining to answer it because the log was not
+    bracketed the way this loop brackets its own was the tool refusing its own
+    headline question.
+    """
+
+    FLAT = ("2026/08/25 04:09:58 INFO  agent woke up\n"
+            "2026/08/25 04:10:31 INFO  reading prompt\n"
+            "2026/08/25 04:11:02 ERROR usage limit reached, resets at 09:00\n")
+
+    def _scan(self, text, now=datetime(2026, 9, 1, 3, 0, 0), stale_after_s=None):
+        return lg.flat_scan("agent.log", text, now, stale_after_s)
+
+    def test_last_activity_is_the_newest_readable_stamp(self):
+        self.assertEqual(self._scan(self.FLAT).last_activity,
+                         datetime(2026, 8, 25, 4, 11, 2))
+
+    def test_dead_flat_loop_is_reported_when_told_what_too_long_means(self):
+        scan = self._scan(self.FLAT, stale_after_s=3600)
+        self.assertIn("may have stopped", scan.stale)
+        self.assertIn("6d", scan.stale)
+
+    def test_silence_is_not_judged_without_an_interval_to_judge_it_against(self):
+        # No cycles means no median interval, and there is no honest default:
+        # three hours of quiet is a dead loop on one schedule and mid-run on
+        # another. It must say it did not judge, not that all is well.
+        scan = self._scan(self.FLAT)
+        self.assertIsNone(scan.stale)
+        out = lg.render_flat([scan], None)
+        self.assertIn("cannot be judged", out)
+        self.assertNotIn("not called stopped", out)
+
+    def test_limit_is_still_found_without_markers(self):
+        self.assertIn("provider limit hit", self._scan(self.FLAT).limit)
+
+    def test_negation_still_applies_without_markers(self):
+        scan = self._scan("2026-08-31 05:00:00 no evidence of a usage limit\n")
+        self.assertIsNone(scan.limit)
+
+    def test_report_names_the_checks_it_could_not_run(self):
+        out = lg.render_flat([self._scan(self.FLAT)], None)
+        self.assertIn("not run:", out)
+        self.assertIn("not a clean bill of health", out)
+
+    def test_no_timestamp_at_all_says_so(self):
+        scan = self._scan("hello\nworld\n")
+        self.assertIsNone(scan.last_activity)
+        self.assertIn("no readable timestamp", lg.render_flat([scan], None))
+
+    def test_future_stamp_is_not_reported_as_fresh(self):
+        scan = self._scan(self.FLAT, now=datetime(2026, 8, 1, 0, 0, 0))
+        self.assertIsNone(scan.silence_s)
+        self.assertIn("in the future", lg.render_flat([scan], 3600))
+
+
+class MarkerlessCli(unittest.TestCase):
+    """The exit code is the part a cron line reads. It has to be right."""
+
+    def _run(self, files: dict, *args) -> tuple[int, str, str]:
+        with tempfile.TemporaryDirectory() as d:
+            for name, body in files.items():
+                with open(os.path.join(d, name), "w", encoding="utf-8") as fh:
+                    fh.write(body)
+            out, err = io.StringIO(), io.StringIO()
+            with redirect_stdout(out), redirect_stderr(err):
+                rc = lg.main([d, *args])
+        return rc, out.getvalue(), err.getvalue()
+
+    def test_a_finding_in_an_unparseable_file_is_not_exit_zero(self):
+        # The bug this pins: one file parsed cleanly, another said "usage limit
+        # reached" and could not be carved into cycles, and loopguard printed
+        # "0 needing attention" and exited 0. The unreadable file's finding was
+        # in the stderr preamble about regexes, where a cron line never looks.
+        rc, out, _ = self._run({
+            "good.log": log((ago(minutes=40), "D" * 300, 0)),
+            "other.log": "2026-08-25 04:11:02 ERROR usage limit reached\n",
+        }, "--stale-after", "0")
+        self.assertEqual(rc, 1)
+        self.assertIn("provider limit hit", out)
+        self.assertIn("no cycles read", out)
+
+    def test_markerless_only_still_answers(self):
+        rc, out, _ = self._run(
+            {"a.log": "2026-08-25 04:11:02 ERROR usage limit reached\n"})
+        self.assertEqual(rc, 1)
+        self.assertIn("no cycles could be read", out)
+        self.assertIn("provider limit hit", out)
+
+    def test_nothing_to_say_is_two_not_zero(self):
+        # Nothing found, but the cycle checks never ran. "I could not judge"
+        # is exit 2; a green 0 here would be the tool's own chapter-4 failure.
+        rc, out, _ = self._run({"a.log": "2026-08-25 04:11:02 INFO fine\n"})
+        self.assertEqual(rc, 2)
+
+    def test_json_still_emits_when_nothing_parsed(self):
+        rc, out, _ = self._run(
+            {"a.log": "2026-08-25 04:11:02 ERROR usage limit reached\n"}, "--json")
+        data = json.loads(out)
+        self.assertEqual(data["cycles"], [])
+        self.assertEqual(len(data["flat"]), 1)
+        self.assertIn("provider limit hit", data["flat"][0]["findings"][0])
+
+    def test_findings_are_not_printed_twice(self):
+        rc, out, err = self._run(
+            {"a.log": "2026-08-25 04:11:02 ERROR usage limit reached\n"})
+        self.assertEqual((out + err).count("provider limit hit"), 1)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

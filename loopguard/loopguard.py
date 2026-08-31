@@ -24,7 +24,10 @@ Usage:
 When a log yields no cycles -- because the loop brackets its runs differently
 from the default -- loopguard says so per file and prints a --start-re/--end-re
 guessed from the log's own lines, rather than silently reporting on whatever
-else it could read.
+else it could read. It also still answers what it can without the markers: when
+the log last had anything written to it, and whether the provider's or the
+login's vocabulary appears in it. The checks that need cycles are named as not
+run, so a short report cannot be mistaken for a clean one.
 
 The loop stopping is the failure this tool exists to catch, and it is the
 one that leaves no evidence: a loop that no longer runs writes no cycle, so
@@ -33,8 +36,11 @@ silence after the last cycle, against the loop's own median interval.
 
 Exit codes:
     0  all cycles healthy
-    1  at least one cycle needs attention, or the loop appears to have stopped
-    2  could not read any log
+    1  at least one cycle needs attention, or the loop appears to have stopped,
+       or a file that could not be parsed still had something to report
+    2  nothing could be judged -- no log read, or no cycle markers matched and
+       the markerless checks found nothing. Deliberately not 0: the cycle-level
+       checks did not run, and "not seen" is not "not there"
 """
 
 from __future__ import annotations
@@ -46,19 +52,37 @@ import os
 import re
 import sys
 from dataclasses import dataclass, field, asdict
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Iterable, Iterator
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 # --- how a cycle is delimited in the log ------------------------------------
 # The defaults match a loop that brackets each run with a start and end line,
 # e.g.  ===== 2026-08-31 05:00:01 JST cycle start =====
 # Override with --start-re / --end-re for a different harness.
-DEFAULT_START_RE = r"=+\s*(?P<ts>\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2})[^=]*?(?:start|開始)"
-DEFAULT_END_RE = r"=+\s*(?P<ts>\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2})[^=]*?(?:end|終了)[^=]*?rc=(?P<rc>-?\d+)"
+# What a timestamp is allowed to look like. Until 0.4.0 this was exactly two
+# shapes -- `2026-08-31 05:00:01` and the same with a T -- which is the shape
+# this loop's own wrapper happens to write. Every other logger was unreadable,
+# and an unreadable timestamp does not degrade gracefully here: it takes the
+# start time away, and a cycle with no start time cannot be dated, ordered, or
+# checked for silence. So the accepted set is now the ones loggers actually
+# emit: `/` for `-`, fractional seconds, and a trailing offset.
+TS_DATE = r"\d{4}[-/]\d{2}[-/]\d{2}"
+TS_CLOCK = r"\d{2}:\d{2}:\d{2}"
+# The offset is captured and applied, not discarded: a container logging in UTC,
+# read on a JST laptop, must not look nine hours stale. A bare zone *name*
+# (`JST`, `UTC`) is still ignored, because a name is not an offset without a
+# table this tool has no business carrying.
+TS_TAIL = r"(?:[.,]\d{1,9})?(?:Z|[+-]\d{2}:?\d{2})?"
+TS_REGEX = TS_DATE + r"[ T]" + TS_CLOCK + TS_TAIL
 
-TS_FORMATS = ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S")
+DEFAULT_START_RE = r"=+\s*(?P<ts>" + TS_REGEX + r")[^=]*?(?:start|開始)"
+DEFAULT_END_RE = r"=+\s*(?P<ts>" + TS_REGEX + r")[^=]*?(?:end|終了)[^=]*?rc=(?P<rc>-?\d+)"
+
+TS_PARSE_RE = re.compile(
+    r"^(?P<date>\d{4}-\d{2}-\d{2})[ T](?P<clock>\d{2}:\d{2}:\d{2})"
+    r"(?:[.,]\d{1,9})?(?P<off>Z|[+-]\d{2}:?\d{2})?$", re.IGNORECASE)
 
 # Phrases that mean "the provider stopped us", not "our code failed".
 # Kept deliberately broad: a false positive here only widens the interval.
@@ -148,8 +172,11 @@ MIN_STARTS_FOR_INTERVAL = 3
 # Used only when a file yields no cycles. The point is to hand back a command
 # line that works, not to parse the log: a wrong guess costs the reader one
 # edit, whereas saying nothing costs them the tool.
-TS_PATTERN = r"(?P<ts>\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2})"
-TS_ANY_RE = re.compile(r"\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}")
+TS_PATTERN = r"(?P<ts>" + TS_REGEX + r")"
+# The broad pattern above is for commands the reader copies; this short one is
+# for the "e.g." lines, which the reader has to actually read.
+TS_PATTERN_HINT = r"(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})"
+TS_ANY_RE = re.compile(TS_REGEX)
 
 # Ordered: the first word that appears in a file is the one suggested.
 START_WORDS = ["cycle start", "run start", "start", "starting", "begin", "beginning",
@@ -171,14 +198,32 @@ AUTH_RES = _compile(AUTH_PATTERNS)
 NEGATION_RES = _compile(NEGATION_PATTERNS)
 
 
+def _offset(raw: str) -> timedelta:
+    if raw.upper() == "Z":
+        return timedelta(0)
+    digits = raw[1:].replace(":", "")
+    delta = timedelta(hours=int(digits[:2]), minutes=int(digits[2:4]))
+    return delta if raw[0] == "+" else -delta
+
+
 def _parse_ts(raw: str) -> datetime | None:
-    raw = raw.strip()
-    for fmt in TS_FORMATS:
-        try:
-            return datetime.strptime(raw, fmt)
-        except ValueError:
-            continue
-    return None
+    """A naive local datetime, or None if this is not a timestamp we can read.
+
+    Everything downstream compares against `datetime.now()`, which is naive
+    local, so a stamp carrying an offset is converted rather than trusted as
+    wall clock. Without that, a UTC log read at JST reports six hours of
+    silence that never happened.
+    """
+    m = TS_PARSE_RE.match(raw.strip().replace("/", "-"))
+    if not m:
+        return None
+    try:
+        dt = datetime.strptime(f"{m['date']} {m['clock']}", "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return None  # matched the shape but is not a date, e.g. 2026-13-45
+    if m["off"]:
+        dt = dt.replace(tzinfo=timezone(_offset(m["off"]))).astimezone().replace(tzinfo=None)
+    return dt
 
 
 @dataclass
@@ -538,10 +583,17 @@ def _try_markers(text: str, name: str, start_re: str, end_re: str) -> list["Cycl
         return []
 
 
-def explain_unread(name: str, text: str) -> list[str]:
-    """Lines explaining why one file produced no cycles, and what to pass."""
+def explain_unread(name: str, text: str, scan: "FlatScan | None" = None) -> list[str]:
+    """Lines explaining why one file produced no cycles, and what to pass.
+
+    `scan` is what could still be read out of the file without markers. It is
+    printed first: a file nobody can parse may still be the file that says the
+    provider cut the loop off, and that should not wait behind a regex lesson.
+    """
     g = guess_markers(text)
     lines = [f"  {os.path.basename(name)}: no cycles matched."]
+    for f in (scan.findings if scan else []):
+        lines.append(f"      !! {f}")
 
     if not g["stamped_lines"]:
         lines.append("      no line carries a timestamp loopguard can read")
@@ -558,7 +610,7 @@ def explain_unread(name: str, text: str) -> list[str]:
 
     if not (g["start_word"] and g["end_word"]):
         lines.append("      could not guess the markers - pass --start-re / --end-re yourself;")
-        lines.append(f"      both need a 'ts' group, e.g. --start-re '{TS_PATTERN}.*MY-START'")
+        lines.append(f"      both need a 'ts' group, e.g. --start-re '{TS_PATTERN_HINT}.*MY-START'")
         return lines
 
     start_re = f"{TS_PATTERN}.*{_as_regex(g['start_word'])}"
@@ -572,7 +624,7 @@ def explain_unread(name: str, text: str) -> list[str]:
     if not found:
         lines.append("      a guess was built from those lines but still matched nothing -")
         lines.append("      pass --start-re / --end-re yourself; both need a 'ts' group, e.g.")
-        lines.append(f"      --start-re '{TS_PATTERN}.*MY-START'")
+        lines.append(f"      --start-re '{TS_PATTERN_HINT}.*MY-START'")
         return lines
 
     complete = sum(1 for c in found if not c.unfinished)
@@ -584,6 +636,115 @@ def explain_unread(name: str, text: str) -> list[str]:
     if not g["rc_key"]:
         lines.append("      (no return code found on the end line - exit codes will show as '?')")
     return lines
+
+
+# --- what can be said about a log with no cycle markers ---------------------
+# The check this tool exists for -- "has the loop stopped?" -- does not actually
+# need cycles. It needs the time of the last thing that happened. Until 0.4.0 a
+# log loopguard could not carve into cycles was answered with a guessed regex
+# and exit 2, which is the tool declining to answer its own question because the
+# log was not bracketed the way this loop happens to bracket its own.
+#
+# So: read what is readable, say exactly which checks did not run, and never let
+# "no markers" render as a clean report.
+
+
+@dataclass
+class FlatScan:
+    """A log read without cycle markers: only what the raw lines support."""
+
+    source: str
+    stamped_lines: int = 0
+    last_activity: datetime | None = None
+    silence_s: float | None = None
+    stale: str | None = None          # set only when silence could be judged
+    limit: str | None = None
+    auth: str | None = None
+
+    @property
+    def findings(self) -> list[str]:
+        return [f for f in (self.stale, self.limit, self.auth) if f]
+
+    def as_dict(self) -> dict:
+        d = asdict(self)
+        d["last_activity"] = self.last_activity.isoformat() if self.last_activity else None
+        d["findings"] = self.findings
+        return d
+
+
+def flat_scan(name: str, text: str, now: datetime,
+              stale_after_s: int | None = None) -> FlatScan:
+    """Judge a markerless log on the two things raw lines can support.
+
+    Deliberately narrow. Duration, timeout, thin output and repetition are all
+    per-cycle and there are no cycles here, so they are not guessed at -- they
+    are reported as not run.
+    """
+    scan = FlatScan(source=name)
+    stamps = []
+    for line in text.splitlines():
+        m = TS_ANY_RE.search(line)
+        if not m:
+            continue
+        scan.stamped_lines += 1
+        ts = _parse_ts(m.group(0))
+        if ts:
+            stamps.append(ts)
+
+    if stamps:
+        scan.last_activity = max(stamps)
+        silence = (now - scan.last_activity).total_seconds()
+        if silence >= 0:
+            scan.silence_s = silence
+            # Without cycles there is no median interval, so there is no
+            # honest default here: three hours of quiet is a dead loop for one
+            # schedule and mid-run for another. Judged only when told what
+            # "too long" means for this loop.
+            if stale_after_s and silence > stale_after_s:
+                scan.stale = (f"nothing has been logged for {_dur(silence)} - the loop may have "
+                              f"stopped (last line {scan.last_activity:%Y-%m-%d %H:%M}; "
+                              f"--stale-after {_dur(stale_after_s)})")
+
+    hit, _ = _first_match(LIMIT_RES, text)
+    if hit:
+        scan.limit = f"provider limit hit ({hit!r}) somewhere in this file - widen the interval"
+    hit, _ = _first_match(AUTH_RES, text)
+    if hit:
+        scan.auth = f"authentication failed ({hit!r}) somewhere in this file - a human has to log in"
+    return scan
+
+
+def render_flat(scans: list[FlatScan], stale_after_s: int | None) -> str:
+    """The report for a run where no file produced a single cycle."""
+    lines = [f"loopguard {__version__}: no cycles could be read.",
+             "Without start/end markers, only these checks can run:", ""]
+    for scan in scans:
+        lines.append(f"  {os.path.basename(scan.source)}")
+        if scan.last_activity is None:
+            lines.append("      ?  no readable timestamp - not even the time of the last line")
+            lines.append("         is known, so nothing here can be judged")
+        else:
+            lines.append(f"      .  last line at {scan.last_activity:%Y-%m-%d %H:%M}"
+                         + (f", {_dur(scan.silence_s)} ago" if scan.silence_s is not None else ""))
+            if scan.stale:
+                lines.append(f"      !! {scan.stale}")
+            elif scan.silence_s is None:
+                lines.append("      ?  that is in the future on this clock (a timezone the log")
+                lines.append("         names but does not offset?), so the quiet since it")
+                lines.append("         was not measured")
+            elif stale_after_s:
+                lines.append(f"      .  within --stale-after {_dur(stale_after_s)}, so not called stopped")
+            else:
+                lines.append("      ?  whether that silence is too long cannot be judged without")
+                lines.append("         knowing how often this loop runs - pass --stale-after MINUTES")
+        for f in (scan.limit, scan.auth):
+            if f:
+                lines.append(f"      !! {f}")
+        lines.append("")
+    lines.append("   not run: cycle duration, timeout kills, thin output, repeated cycles.")
+    lines.append("   All four need start/end markers. This is not a clean bill of health -")
+    lines.append("   it is a shorter list of questions. See the guessed --start-re above.")
+    return "\n".join(lines)
 
 
 def collect_logs(paths: list[str]) -> list[tuple[str, str]]:
@@ -617,11 +778,23 @@ def collect_logs(paths: list[str]) -> list[tuple[str, str]]:
     return out
 
 
-def render(cycles: list[Cycle], advice: str | None, stale: str | None = None) -> str:
+def render(cycles: list[Cycle], advice: str | None, stale: str | None = None,
+           scans: list["FlatScan"] | None = None) -> str:
     lines = []
     bad = [c for c in cycles if not c.ok]
-    lines.append(f"loopguard {__version__}: {len(cycles)} cycle(s), {len(bad)} needing attention")
+    unreadable = [s for s in (scans or []) if s.findings]
+    header = f"loopguard {__version__}: {len(cycles)} cycle(s), {len(bad)} needing attention"
+    if unreadable:
+        header += f", plus {len(unreadable)} file(s) with no cycles but something to say"
+    lines.append(header)
     lines.append("")
+    for scan in unreadable:
+        # Above the cycle list for the same reason `stale` is: every cycle
+        # below can read `ok` while a file nobody could parse is the one saying
+        # the provider cut the loop off. 0.4.0 fixed this counting as healthy.
+        for f in scan.findings:
+            lines.append(f"!! {os.path.basename(scan.source)} (no cycles read): {f}")
+        lines.append("")
     if stale:
         # Above the per-cycle list on purpose: every line below it can say "ok"
         # and still describe a loop that has not run since Tuesday.
@@ -659,7 +832,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--stale-after", type=int, metavar="MINUTES",
                     help="report the loop as stopped after this much silence "
                          f"(default: {STALE_MULTIPLIER}x its own median interval, "
-                         f"at least {MIN_STALE_S // 60} min; 0 disables)")
+                         f"at least {MIN_STALE_S // 60} min; 0 disables). Required "
+                         "to judge silence in a log with no cycle markers, where "
+                         "there is no median interval to derive it from")
     ap.add_argument("--min-output", type=int, default=THIN_OUTPUT_CHARS, metavar="CHARS",
                     help=f"below this many characters a cycle counts as having done nothing (default {THIN_OUTPUT_CHARS})")
     ap.add_argument("--start-re", default=DEFAULT_START_RE, help="regex for a cycle start line (needs a 'ts' group)")
@@ -683,6 +858,9 @@ def main(argv: list[str] | None = None) -> int:
         print("loopguard: no logs read", file=sys.stderr)
         return 2
 
+    now = datetime.now()
+    stale_after_s = args.stale_after * 60 if args.stale_after is not None else None
+
     cycles: list[Cycle] = []
     unread: list[tuple[str, str]] = []
     for name, text in logs:
@@ -691,6 +869,8 @@ def main(argv: list[str] | None = None) -> int:
             cycles.extend(found)
         else:
             unread.append((name, text))
+
+    scans = [flat_scan(name, text, now, stale_after_s) for name, text in unread]
 
     # A file that yields nothing is the failure most likely to pass unnoticed:
     # the report still says "all healthy", it is just quietly missing a day.
@@ -702,23 +882,38 @@ def main(argv: list[str] | None = None) -> int:
             + (" with the markers given:" if custom else ":"),
             file=sys.stderr,
         )
-        for name, text in unread:
-            for line in explain_unread(name, text):
+        for (name, text), scan in zip(unread, scans):
+            # If no file parsed at all, the flat report prints these findings
+            # as the main body; repeating them here just doubles the noise.
+            for line in explain_unread(name, text, None if not cycles else scan):
                 print(line, file=sys.stderr)
         print("", file=sys.stderr)
 
     if not cycles:
-        return 2
+        # Not "could not read any log" any more. The question this tool is for
+        # -- is the loop still running? -- is answerable from the last line's
+        # timestamp, and refusing to answer it because the brackets were the
+        # wrong shape was the tool failing the same way it fails in chapter 5.
+        if args.json:
+            print(json.dumps(
+                {
+                    "version": __version__,
+                    "cycles": [],
+                    "flat": [s.as_dict() for s in scans],
+                    "files_without_cycles": [n for n, _ in unread],
+                },
+                ensure_ascii=False, indent=2,
+            ))
+        else:
+            print(render_flat(scans, stale_after_s))
+        return 1 if any(s.findings for s in scans) else 2
 
     cycles.sort(key=lambda c: (c.started is None, c.started or datetime.min))
 
     # Staleness is measured against every cycle on record, before --since
     # narrows the view: "nothing has run for four days" is the same fact
     # whether or not you asked to look at today.
-    stale = check_staleness(
-        cycles, datetime.now(),
-        args.stale_after * 60 if args.stale_after is not None else None,
-    )
+    stale = check_staleness(cycles, now, stale_after_s)
 
     excluded = 0
     if args.since is not None:
@@ -751,14 +946,16 @@ def main(argv: list[str] | None = None) -> int:
                 "suggestion": advice,
                 "stale": stale,
                 "files_without_cycles": [n for n, _ in unread],
+                "flat": [s.as_dict() for s in scans],
                 "cycles_excluded_by_since": excluded,
             },
             ensure_ascii=False, indent=2,
         ))
     else:
-        print(render(cycles, advice, stale))
+        print(render(cycles, advice, stale, scans))
 
-    return 1 if (stale or any(not c.ok for c in cycles)) else 0
+    return 1 if (stale or any(not c.ok for c in cycles)
+                 or any(s.findings for s in scans)) else 0
 
 
 if __name__ == "__main__":

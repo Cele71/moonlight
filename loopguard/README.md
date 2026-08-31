@@ -27,6 +27,7 @@ and reports the ways an unattended loop actually fails:
 | the loop is spinning | two cycles with near-identical output | `output 100% identical to the previous cycle - the loop may be stuck` |
 | a cycle was killed outright | a start marker with no end, overtaken by the next start | `started but never wrote an end marker ... this run was killed, not finished` |
 | **the loop stopped** | **nothing. That is the whole problem** | `no cycle has started for 9d 13h - the loop may have stopped` |
+| your log has no cycle markers at all | just timestamped lines | the checks that do not need markers still run, and the ones that do are **named as not run** |
 
 The last two are the reason this exists, and the last one is the hardest to see.
 A stuck loop exits `0` every time and looks perfectly healthy while burning your
@@ -58,7 +59,7 @@ chmod +x loopguard.py
 ```
 
 ```
-loopguard 0.3.0: 4 cycle(s), 3 needing attention
+loopguard 0.4.0: 4 cycle(s), 3 needing attention
 
 !! [1] 2026-08-28 05:00  0m  rc=1  (2026-08-28.log)
       - provider limit hit ('usage limit') - widen the interval
@@ -140,6 +141,79 @@ If the guess does not parse the log either, it says that instead of printing a
 command that would waste your time. `--json` reports the same thing as
 `files_without_cycles`.
 
+## If your log has no cycle markers
+
+Everything above assumes the log brackets each run. Plenty of loops do not — the
+agent just appends to a file, and there is no footer to find. Until 0.4.0
+loopguard's answer to that was a guessed regex and exit `2`: no report at all.
+
+That was the wrong answer, because **the headline question does not need
+cycles.** "Has this loop stopped?" is answerable from the timestamp on the last
+line. So a log that yields no cycles now gets the checks that raw lines support:
+
+```
+loopguard 0.4.0: no cycles could be read.
+Without start/end markers, only these checks can run:
+
+  agent.log
+      .  last line at 2026-08-25 04:11, 6d 22h ago
+      !! nothing has been logged for 6d 22h - the loop may have stopped (last
+         line 2026-08-25 04:11; --stale-after 1h 00m)
+      !! provider limit hit ('usage limit') somewhere in this file - widen the interval
+
+   not run: cycle duration, timeout kills, thin output, repeated cycles.
+   All four need start/end markers. This is not a clean bill of health -
+   it is a shorter list of questions. See the guessed --start-re above.
+```
+
+Two things that block are deliberate:
+
+- **Silence is only judged if you pass `--stale-after`.** With cycles, loopguard
+  derives the threshold from the loop's own median interval. With no cycles
+  there is no interval, and there is no honest default — three hours of quiet is
+  a dead loop on one schedule and mid-run on another. So it prints how long the
+  log has been quiet and says it did not judge it.
+- **The last four lines are not decoration.** A short report is not a good
+  report. The checks that could not run are listed by name so that "nothing
+  found" cannot be read as "nothing wrong".
+
+Exit codes here: `1` if something was found, `2` if nothing was found — because
+the cycle-level checks never ran, and a green `0` would be this tool making the
+mistake it was written to catch. Give it markers (`--start-re` / `--end-re`, or
+the guess it prints) and you get `0` back.
+
+The same applies per-file in a mixed directory. A file nobody can parse still
+gets read for provider limits and auth failures, and **a finding there counts**:
+
+```
+loopguard 0.4.0: 1 cycle(s), 0 needing attention, plus 1 file(s) with no cycles but something to say
+
+!! other.log (no cycles read): provider limit hit ('usage limit') - widen the interval
+
+ok [1] 2026-08-31 05:00  42m  rc=0  (good.log)
+```
+
+Before 0.4.0 that run printed `0 needing attention` and exited `0`. The finding
+was in the stderr preamble about regexes, which is not where a cron line looks.
+
+## Timestamps it can read
+
+`YYYY-MM-DD` or `YYYY/MM/DD`, a space or a `T`, `HH:MM:SS`, then optionally
+fractional seconds and an offset:
+
+```
+2026-08-31 05:00:01          2026-08-31T05:00:01.123456
+2026/08/31 05:00:01          2026-08-31T20:00:00Z
+                             2026-09-01T05:00:00+09:00
+```
+
+**An offset is applied, not ignored.** Everything is compared against your local
+clock, so a container logging in UTC read on a JST laptop would otherwise show
+nine hours of silence that never happened. A zone *name* (`JST`, `UTC`) is not
+an offset and is left alone — this tool carries no timezone table.
+
+Anything else needs a `--start-re` with a `ts` group matching your format.
+
 ## Tuning
 
 - `--min-output CHARS` — below this a cycle counts as having done nothing.
@@ -176,7 +250,7 @@ Standard library only, no test framework to install:
 python3 -m unittest discover -s . -v      # from the directory holding loopguard.py
 ```
 
-71 tests. The ones named `test_negated_*` and `test_thin_output_on_unfinished_*`
+90 tests. The ones named `test_negated_*` and `test_thin_output_on_unfinished_*`
 are regressions for two bugs that shipped: reading the agent's own sentence
 *"no evidence of a usage limit"* as a usage limit and advising a slowdown, and
 reporting the cycle currently running loopguard as having done nothing. Both are
@@ -196,6 +270,13 @@ health checker for unattended loops could not detect the loop stopping, and
 files in *alphabetical* order, so a directory containing `watcher.log` was
 answered with `watcher.log`.
 
+`test_a_finding_in_an_unparseable_file_is_not_exit_zero` and
+`test_nothing_to_say_is_two_not_zero` pin 0.4.0's. The first is the same class
+again: a file saying `usage limit reached` that could not be carved into cycles
+was mentioned in a stderr note about regexes and then left out of the verdict,
+so the run exited `0`. **Four versions running, and four times the bug was
+"there was information, and the summary line did not carry it."**
+
 ## What it does not do
 
 - It does not read your agent's *reasoning*, only what reached the log. A cycle
@@ -214,7 +295,7 @@ it once read the agent's own sentence *"no evidence of a usage limit"* as a usag
 limit and advised slowing down.
 
 Those, and about twenty more, are written up properly in
-**[*Left Running*](../left-running/)** — a ~25,000-word field log of the first day
+**[*Left Running*](../left-running/)** — a ~26,000-word field log of the first day
 of the experiment this tool came out of, by the agent that ran it. Chapter 5 is
 this tool: why it exists, the false positive in its first version, and why a
 monitor you have only ever run against a healthy system has not been tested.
