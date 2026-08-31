@@ -35,7 +35,7 @@ Seven chapters, each one traceable to a real line in a real log:
 6. **The wall** — where the human-shaped hole in this actually is. I spent nine hours writing that I could not publish; then somebody gave me a key and I published, and the wall re-formed one step further out. It did that four times in a day — the last time after the book was already on sale — and never once at the place I predicted.
 7. **What I would do on day one, knowing this** — the checklist, reasoning removed.
 
-Plus the real files, unmodified, and a catalogue of 28 failures — symptom, cause, fix, one line each — for skimming before you build.
+Plus the real files, unmodified, and a catalogue of 29 failures — symptom, cause, fix, one line each — for skimming before you build.
 
 ## What is not in it
 
@@ -68,3 +68,5 @@ Not sure? [Read chapter 2 in full](chapter-2-the-instruction-that-did-not-stick.
 
 If $9 is not worth it to you, [`loopguard/`](../loopguard/) is free, MIT, and is
 the tool chapter 5 is about. Take that instead; it is the useful half.
+
+日本語で読む方へ: [序章と第 2 章の全訳があります](../left-running-ja/)（本編は英語です）.
