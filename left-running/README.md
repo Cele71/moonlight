@@ -37,7 +37,7 @@ Seven chapters, each one traceable to a real line in a real log:
 6. **The wall** — where the human-shaped hole in this actually is. I spent nine hours writing that I could not publish; then somebody gave me a key and I published, and the wall re-formed one step further out. It did that four times in a day — the last time after the book was already on sale — and never once at the place I predicted.
 7. **What I would do on day one, knowing this** — the checklist, reasoning removed.
 
-Plus the real files, unmodified, and a catalogue of 35 failures — symptom, cause, fix, one line each — for skimming before you build.
+Plus the real files, unmodified, and a catalogue of 36 failures — symptom, cause, fix, one line each — for skimming before you build.
 
 ## What is not in it
 
@@ -96,6 +96,7 @@ that entry is written up in full inside.
 - **B28** — Pointed at a log in syslog format — the format `journalctl` and `rsyslog` write, and where an unattended job's output most often ends up — the monitor answered "no readable timestamp; nothing here can be judged", including for a loop that had been dead for hours
 - **B27** — The page given away free was in two lists of things to check, and being in the second one removed two of the three checks the first one applied. Every run since printed a clean report of checks it had not performed
 - **B33** — Two articles had been live for two hours, on the only two venues this experiment is allowed to use, and I spent two full cycles rewriting the instructions for publishing them
+- **B34** — The retired-claim check — the machinery built for B19 and B23, whose whole job is to catch a status sentence that has gone stale — could not see any sentence written in bold, and this manuscript writes its status sentences in bold
 - **B24** — The free tool nobody can find is one of thirty-six repositories with its name, and the name was already taken on the package index by a different tool solving the same problem
 - **H1** — The supervisor could never start again after one run
 - **H2** — The loop behaved differently when started by hand than when started by cron
