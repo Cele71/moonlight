@@ -309,5 +309,124 @@ class Cli(unittest.TestCase):
         self.assertEqual(rc, 2)
 
 
+FOREIGN_LOG = """[2026-08-30 09:00:00] INFO  run 1 begin
+[2026-08-30 09:00:01] doing some work that is long enough to count as output
+[2026-08-30 09:04:12] INFO  run 1 finished exit=0
+[2026-08-30 10:00:00] INFO  run 2 begin
+[2026-08-30 10:00:01] more work, also long enough to be a real cycle body here
+[2026-08-30 10:02:00] INFO  run 2 finished exit=1
+"""
+
+
+class GuessMarkers(unittest.TestCase):
+    """A log the defaults cannot read must produce advice that actually works."""
+
+    def test_finds_start_and_end_words(self):
+        g = lg.guess_markers(FOREIGN_LOG)
+        self.assertEqual(g["start_word"], "begin")
+        self.assertEqual(g["end_word"], "finished")
+        self.assertEqual(g["rc_key"], "exit")
+        self.assertEqual(g["stamped_lines"], 6)
+
+    def test_whole_word_not_substring(self):
+        # "finish" precedes "finished" in END_WORDS; picking it would generate
+        # \bfinish\b, which matches nothing in this log. Regression for the bug
+        # where the suggested command was printed without being tried.
+        g = lg.guess_markers(FOREIGN_LOG)
+        self.assertNotEqual(g["end_word"], "finish")
+
+    def test_no_timestamp_gives_up_cleanly(self):
+        g = lg.guess_markers("run begin\nrun finished\n")
+        self.assertEqual(g["stamped_lines"], 0)
+        self.assertIsNone(g["start_word"])
+
+    def test_end_word_does_not_steal_the_start_line(self):
+        # "restart complete" must not make "start" the start marker.
+        text = ("2026-08-30 09:00:00 cycle opening here\n"
+                "2026-08-30 09:01:00 restart complete\n")
+        g = lg.guess_markers(text)
+        self.assertNotEqual(g["start_word"], "start")
+
+    def test_suggestion_is_verified_before_it_is_printed(self):
+        out = "\n".join(lg.explain_unread("agent.log", FOREIGN_LOG))
+        self.assertIn("reads it as 2 cycle(s)", out)
+        self.assertIn("--start-re", out)
+        self.assertIn("--end-re", out)
+
+    def test_suggested_command_really_parses_the_log(self):
+        out = "\n".join(lg.explain_unread("agent.log", FOREIGN_LOG))
+        start = re.search(r"--start-re '([^']+)'", out).group(1)
+        end = re.search(r"--end-re '([^']+)'", out).group(1)
+        cycles = lg.split_cycles(FOREIGN_LOG, "agent.log",
+                                 re.compile(start, re.IGNORECASE),
+                                 re.compile(end, re.IGNORECASE))
+        self.assertEqual(len(cycles), 2)
+        self.assertEqual([c.rc for c in cycles], [0, 1])
+
+    def test_unguessable_log_says_so_rather_than_bluffing(self):
+        text = "2026-08-30 09:00:00 zzz\n2026-08-30 09:05:00 zzz\n"
+        out = "\n".join(lg.explain_unread("agent.log", text))
+        self.assertIn("could not guess", out)
+        self.assertNotIn("reads it as", out)
+
+    def test_timestamped_but_unreadable_mentions_start_re(self):
+        out = "\n".join(lg.explain_unread("agent.log", "no timestamps at all\n"))
+        self.assertIn("--start-re", out)
+        self.assertIn("ts", out)
+
+
+class SilentlySkippedFiles(unittest.TestCase):
+    """The dangerous failure: one file reads, another is dropped without a word."""
+
+    def _run_dir(self, files: dict) -> tuple[int, str, str]:
+        with tempfile.TemporaryDirectory() as d:
+            for name, body in files.items():
+                with open(os.path.join(d, name), "w", encoding="utf-8") as fh:
+                    fh.write(body)
+            out, err = io.StringIO(), io.StringIO()
+            with redirect_stdout(out), redirect_stderr(err):
+                rc = lg.main([d])
+            return rc, out.getvalue(), err.getvalue()
+
+    def test_a_skipped_file_is_announced_even_when_others_read(self):
+        rc, out, err = self._run_dir({
+            "a.log": log(("2026-08-31 05:00:00", "A" * 200, 0)),
+            "b.log": FOREIGN_LOG,
+        })
+        self.assertEqual(rc, 0, "the readable file is still healthy")
+        self.assertIn("1 of 2 file(s) produced no cycles", err)
+        self.assertIn("b.log", err)
+
+    def test_all_files_readable_says_nothing(self):
+        rc, out, err = self._run_dir({"a.log": log(("2026-08-31 05:00:00", "A" * 200, 0))})
+        self.assertEqual(err, "")
+
+    def test_json_lists_the_skipped_files(self):
+        import json
+        with tempfile.TemporaryDirectory() as d:
+            for name, body in (("a.log", log(("2026-08-31 05:00:00", "A" * 200, 0))),
+                               ("b.log", FOREIGN_LOG)):
+                with open(os.path.join(d, name), "w", encoding="utf-8") as fh:
+                    fh.write(body)
+            out, err = io.StringIO(), io.StringIO()
+            with redirect_stdout(out), redirect_stderr(err):
+                lg.main([d, "--json"])
+        data = json.loads(out.getvalue())
+        self.assertEqual(len(data["files_without_cycles"]), 1)
+        self.assertTrue(data["files_without_cycles"][0].endswith("b.log"))
+
+    def test_custom_markers_are_named_in_the_message(self):
+        rc, out, err = self._run_dir({"b.log": FOREIGN_LOG})
+        self.assertIn("produced no cycles:", err)
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "b.log")
+            with open(p, "w", encoding="utf-8") as fh:
+                fh.write(FOREIGN_LOG)
+            err2 = io.StringIO()
+            with redirect_stdout(io.StringIO()), redirect_stderr(err2):
+                lg.main([p, "--start-re", r"(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) NOPE"])
+            self.assertIn("with the markers given", err2.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

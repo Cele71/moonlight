@@ -40,7 +40,7 @@ chmod +x loopguard.py
 ```
 
 ```
-loopguard 0.1.1: 4 cycle(s), 3 needing attention
+loopguard 0.2.0: 4 cycle(s), 3 needing attention
 
 !! [1] 2026-08-28 05:00  0m  rc=1  (2026-08-28.log)
       - provider limit hit ('usage limit') - widen the interval
@@ -95,6 +95,27 @@ needs a named group `ts`; the end pattern needs `ts` and may have `rc`:
   --end-re   '^\[(?P<ts>[\d-]+ [\d:]+)\] RUN END exit=(?P<rc>\d+)'
 ```
 
+You do not have to work those out from scratch. A file that yields no cycles is
+named — never dropped in silence, even when the other files read fine — and
+loopguard reads it for likely markers, builds a command line from them, **runs
+that command against the log**, and only prints it if it parses:
+
+```
+loopguard: 1 of 4 file(s) produced no cycles:
+  agent.log: no cycles matched.
+      6 line(s) carry a timestamp, but none matched the start/end markers.
+      looks like a start: [2026-08-30 09:00:00] INFO  run 1 begin
+      looks like an end: [2026-08-30 09:04:12] INFO  run 1 finished exit=0
+      this reads it as 2 cycle(s):
+        loopguard agent.log \
+          --start-re '(?P<ts>\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}).*\bbegin\b' \
+          --end-re '(?P<ts>\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}).*\bfinished\b.*?\bexit\b[=: ]\s*(?P<rc>-?\d+)'
+```
+
+If the guess does not parse the log either, it says that instead of printing a
+command that would waste your time. `--json` reports the same thing as
+`files_without_cycles`.
+
 ## Tuning
 
 - `--min-output CHARS` — below this a cycle counts as having done nothing.
@@ -122,12 +143,18 @@ Standard library only, no test framework to install:
 python3 -m unittest discover -s . -v      # from the directory holding loopguard.py
 ```
 
-37 tests. The ones named `test_negated_*` and `test_thin_output_on_unfinished_*`
+49 tests. The ones named `test_negated_*` and `test_thin_output_on_unfinished_*`
 are regressions for two bugs that shipped: reading the agent's own sentence
 *"no evidence of a usage limit"* as a usage limit and advising a slowdown, and
 reporting the cycle currently running loopguard as having done nothing. Both are
 the same class of mistake — judging a piece of text without the context that
 tells you what it means — and both are cheap to reintroduce, so they are pinned.
+
+`test_whole_word_not_substring` and `test_suggested_command_really_parses_the_log`
+pin a third: the first version of the marker guesser printed a `--start-re` it
+had never run. It suggested `\bfinish\b` for a log that says *finished*, which
+matches nothing. Advice that does not work is worse than silence, so the
+suggestion is now executed before it is shown.
 
 ## What it does not do
 

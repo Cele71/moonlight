@@ -20,6 +20,11 @@ Usage:
     loopguard.py logs/ --json              # machine readable
     loopguard.py logs/ --since 3           # only the last 3 days of files
 
+When a log yields no cycles -- because the loop brackets its runs differently
+from the default -- loopguard says so per file and prints a --start-re/--end-re
+guessed from the log's own lines, rather than silently reporting on whatever
+else it could read.
+
 Exit codes:
     0  all cycles healthy
     1  at least one cycle needs attention
@@ -38,7 +43,7 @@ from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from typing import Iterable, Iterator
 
-__version__ = "0.1.1"
+__version__ = "0.2.0"
 
 # --- how a cycle is delimited in the log ------------------------------------
 # The defaults match a loop that brackets each run with a start and end line,
@@ -119,6 +124,23 @@ COMPARABLE_CHARS = 60
 
 # Two cycles whose output is this similar are treated as the loop spinning.
 REPEAT_SIMILARITY = 0.92
+
+# --- guessing a marker for a log loopguard cannot read ----------------------
+# Used only when a file yields no cycles. The point is to hand back a command
+# line that works, not to parse the log: a wrong guess costs the reader one
+# edit, whereas saying nothing costs them the tool.
+TS_PATTERN = r"(?P<ts>\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2})"
+TS_ANY_RE = re.compile(r"\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}")
+
+# Ordered: the first word that appears in a file is the one suggested.
+START_WORDS = ["cycle start", "run start", "start", "starting", "begin", "beginning",
+               "launch", "invoking", "開始"]
+END_WORDS = ["cycle end", "run end", "end", "ended", "finish", "finished", "done",
+             "complete", "completed", "exit", "終了"]
+
+# How a return code tends to be written next to an end marker.
+RC_KEYS = ["rc", "exit", "exit_code", "exitcode", "status", "code"]
+RC_VALUE = r"[=: ]\s*(?P<rc>-?\d+)"
 
 
 def _compile(patterns: Iterable[str]) -> list[re.Pattern]:
@@ -317,6 +339,128 @@ def suggest_interval(cycles: list[Cycle], current_per_day: int | None) -> str | 
     return None
 
 
+def _as_regex(word: str) -> str:
+    """A regex fragment matching `word`, word-bounded where that means anything."""
+    escaped = re.escape(word)
+    if word[0].isalnum() and word[-1].isalnum() and word.isascii():
+        return r"\b" + escaped + r"\b"
+    return escaped
+
+
+def _word_hits(lines: list[str], words: list[str]) -> str | None:
+    """The first word from `words` present as a whole word on these lines.
+
+    Whole-word, not substring: a log saying "finished" must not be handed a
+    suggestion built around "finish", because the \\b in the generated regex
+    would then match nothing and the advice would be worse than silence.
+    """
+    joined = "\n".join(lines).lower()
+    for w in words:
+        if re.search(_as_regex(w), joined, re.IGNORECASE):
+            return w
+    return None
+
+
+def guess_markers(text: str) -> dict:
+    """Look at one unreadable log and guess how it delimits a run.
+
+    Returns what was found -- timestamped lines, a candidate start word, a
+    candidate end word, how the return code is written -- plus example lines,
+    so the caller can print something the reader can act on.
+    """
+    stamped = [ln for ln in text.splitlines() if TS_ANY_RE.search(ln)]
+    out: dict = {
+        "stamped_lines": len(stamped),
+        "start_word": None,
+        "end_word": None,
+        "rc_key": None,
+        "start_example": None,
+        "end_example": None,
+    }
+    if not stamped:
+        return out
+
+    end_word = _word_hits(stamped, END_WORDS)
+    # A start word is only meaningful on lines that are not end lines, otherwise
+    # "start" inside "restart complete" wins over the real marker.
+    not_end = stamped
+    if end_word:
+        end_pat = re.compile(_as_regex(end_word), re.IGNORECASE)
+        not_end = [ln for ln in stamped if not end_pat.search(ln)] or stamped
+    start_word = _word_hits(not_end, START_WORDS)
+
+    out["start_word"] = start_word
+    out["end_word"] = end_word
+    if start_word:
+        start_pat = re.compile(_as_regex(start_word), re.IGNORECASE)
+        out["start_example"] = next((ln for ln in not_end if start_pat.search(ln)), None)
+    if end_word:
+        end_lines = [ln for ln in stamped if end_pat.search(ln)]
+        out["end_example"] = end_lines[0] if end_lines else None
+        for key in RC_KEYS:
+            if re.search(_as_regex(key) + RC_VALUE, "\n".join(end_lines), re.IGNORECASE):
+                out["rc_key"] = key
+                break
+    return out
+
+
+def _try_markers(text: str, name: str, start_re: str, end_re: str) -> list["Cycle"]:
+    """Split `text` with a guessed pair of markers. [] if the guess is unusable."""
+    try:
+        return split_cycles(text, name, re.compile(start_re, re.IGNORECASE),
+                            re.compile(end_re, re.IGNORECASE))
+    except re.error:
+        return []
+
+
+def explain_unread(name: str, text: str) -> list[str]:
+    """Lines explaining why one file produced no cycles, and what to pass."""
+    g = guess_markers(text)
+    lines = [f"  {os.path.basename(name)}: no cycles matched."]
+
+    if not g["stamped_lines"]:
+        lines.append("      no line carries a timestamp loopguard can read")
+        lines.append("      (it expects YYYY-MM-DD HH:MM:SS, or the same with a T).")
+        lines.append("      every cycle needs a start time, so --start-re must contain a")
+        lines.append("      'ts' group matching whatever format this log uses.")
+        return lines
+
+    lines.append(f"      {g['stamped_lines']} line(s) carry a timestamp, "
+                 f"but none matched the start/end markers.")
+    for label, key in (("a start", "start_example"), ("an end", "end_example")):
+        if g[key]:
+            lines.append(f"      looks like {label}: {g[key].strip()[:100]}")
+
+    if not (g["start_word"] and g["end_word"]):
+        lines.append("      could not guess the markers - pass --start-re / --end-re yourself;")
+        lines.append(f"      both need a 'ts' group, e.g. --start-re '{TS_PATTERN}.*MY-START'")
+        return lines
+
+    start_re = f"{TS_PATTERN}.*{_as_regex(g['start_word'])}"
+    end_re = f"{TS_PATTERN}.*{_as_regex(g['end_word'])}"
+    if g["rc_key"]:
+        end_re += f".*?{_as_regex(g['rc_key'])}{RC_VALUE}"
+    # Run the guess against the log before printing it. Advice that does not
+    # work is worse than no advice: it sends the reader off to debug a regex
+    # this tool wrote, inside a tool they have not decided to trust yet.
+    found = _try_markers(text, name, start_re, end_re)
+    if not found:
+        lines.append("      a guess was built from those lines but still matched nothing -")
+        lines.append("      pass --start-re / --end-re yourself; both need a 'ts' group, e.g.")
+        lines.append(f"      --start-re '{TS_PATTERN}.*MY-START'")
+        return lines
+
+    complete = sum(1 for c in found if not c.unfinished)
+    lines.append(f"      this reads it as {len(found)} cycle(s)"
+                 + (f", {complete} of them complete:" if complete != len(found) else ":"))
+    lines.append(f"        loopguard {name} \\")
+    lines.append(f"          --start-re '{start_re}' \\")
+    lines.append(f"          --end-re '{end_re}'")
+    if not g["rc_key"]:
+        lines.append("      (no return code found on the end line - exit codes will show as '?')")
+    return lines
+
+
 def collect_logs(paths: list[str], since_days: int | None) -> list[tuple[str, str]]:
     files: list[str] = []
     for p in paths:
@@ -397,15 +541,30 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     cycles: list[Cycle] = []
+    unread: list[tuple[str, str]] = []
     for name, text in logs:
-        cycles.extend(split_cycles(text, name, start_re, end_re))
+        found = split_cycles(text, name, start_re, end_re)
+        if found:
+            cycles.extend(found)
+        else:
+            unread.append((name, text))
 
-    if not cycles:
+    # A file that yields nothing is the failure most likely to pass unnoticed:
+    # the report still says "all healthy", it is just quietly missing a day.
+    # So it is always announced, even when the other files read fine.
+    if unread:
+        custom = args.start_re != DEFAULT_START_RE or args.end_re != DEFAULT_END_RE
         print(
-            "loopguard: no cycles found. If your loop marks runs differently, "
-            "pass --start-re / --end-re.",
+            f"loopguard: {len(unread)} of {len(logs)} file(s) produced no cycles"
+            + (" with the markers given:" if custom else ":"),
             file=sys.stderr,
         )
+        for name, text in unread:
+            for line in explain_unread(name, text):
+                print(line, file=sys.stderr)
+        print("", file=sys.stderr)
+
+    if not cycles:
         return 2
 
     for c in cycles:
@@ -415,7 +574,12 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.json:
         print(json.dumps(
-            {"version": __version__, "cycles": [c.as_dict() for c in cycles], "suggestion": advice},
+            {
+                "version": __version__,
+                "cycles": [c.as_dict() for c in cycles],
+                "suggestion": advice,
+                "files_without_cycles": [n for n, _ in unread],
+            },
             ensure_ascii=False, indent=2,
         ))
     else:
