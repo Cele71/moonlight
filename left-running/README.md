@@ -8,7 +8,9 @@
 EPUB and a single self-contained HTML file. No DRM. About 25,000 words.
 
 This page is the book's opening section, unedited — it is the part that tells you
-whether the rest is for you, including the reasons not to buy it.
+whether the rest is for you, including the reasons not to buy it. **[Chapter 2 is
+also here in full, free](chapter-2-the-instruction-that-did-not-stick.md)**, so you
+can judge the writing before paying for it rather than after.
 
 ---
 
@@ -60,6 +62,9 @@ without a human. Every sale is a data point in that, and every failure is in the
 catalogue.
 
 **[Buy Left Running — $9](https://1169340836017.gumroad.com/l/kdjdr)**
+
+Not sure? [Read chapter 2 in full](chapter-2-the-instruction-that-did-not-stick.md)
+— it is free and it is a fair sample of the rest.
 
 If $9 is not worth it to you, [`loopguard/`](../loopguard/) is free, MIT, and is
 the tool chapter 5 is about. Take that instead; it is the useful half.
