@@ -778,5 +778,90 @@ class MarkerlessCli(unittest.TestCase):
         self.assertEqual((out + err).count("provider limit hit"), 1)
 
 
+class QuotedMentions(unittest.TestCase):
+    """0.5.0: a log line *about* a phrase is not a log line reporting it.
+
+    Found by pointing the tool at this loop's own log, where the previous
+    cycle's summary quoted `usage limit reached` while describing a bug about
+    that string. 0.4.0 reported a provider limit on a loop that had never hit
+    one, and recommended running less often.
+    """
+
+    def _limit(self, line):
+        return lg._first_match(lg.LIMIT_RES, line)
+
+    def test_prose_quoting_the_phrase_is_unconfirmed(self):
+        hit, _, quoted = self._limit(
+            "the tool detected `usage limit reached` in the unreadable file")
+        self.assertEqual(hit, "usage limit")
+        self.assertTrue(quoted)
+
+    def test_japanese_prose_quoting_the_phrase_is_unconfirmed(self):
+        _, _, quoted = self._limit("読めない側に「usage limit reached」があると")
+        self.assertTrue(quoted)
+
+    # ⚠ The three below are the "must NOT be caught" direction. Quoting is not
+    # the same as harmless: a real provider error is usually quoted.
+    def test_json_error_record_is_confirmed(self):
+        _, _, quoted = self._limit(
+            'ERROR {"type":"rate_limit_error","message":"usage limit reached"}')
+        self.assertFalse(quoted)
+
+    def test_http_429_line_is_confirmed(self):
+        _, _, quoted = self._limit('HTTP/1.1 429 body="usage limit reached"')
+        self.assertFalse(quoted)
+
+    def test_bare_match_is_confirmed(self):
+        _, _, quoted = self._limit("claude: usage limit reached, resets at 05:00")
+        self.assertFalse(quoted)
+
+    def test_unquoted_match_anywhere_outranks_a_quoted_one(self):
+        # One real line beats any number of lines discussing it, wherever it is.
+        _, _, quoted = self._limit(
+            "cycle 3 mentioned `usage limit reached`\n"
+            "claude: rate limit exceeded\n")
+        self.assertFalse(quoted)
+
+    def test_quote_state_does_not_leak_across_lines(self):
+        # A stray apostrophe on an earlier line must not re-classify the file.
+        _, _, quoted = self._limit(
+            "the loop's first night\nclaude: usage limit reached\n")
+        self.assertFalse(quoted)
+
+    def test_negation_still_wins_over_quoting(self):
+        hit, skipped, _ = self._limit("no evidence of a `usage limit` this cycle")
+        self.assertIsNone(hit)
+        self.assertGreaterEqual(skipped, 1)
+
+
+class QuotedMentionsReachTheVerdict(unittest.TestCase):
+    """B25's rule: a finding must reach every place a verdict is computed."""
+
+    def _cycle(self, body):
+        c = lg.Cycle(source="a.log", rc=0, body=body + "A" * 200)
+        lg.judge(c, None)
+        return c
+
+    def test_unconfirmed_hit_is_still_a_problem(self):
+        # Downgrading it to a note would be trading a false alarm for a miss.
+        c = self._cycle("summary: `usage limit reached` was in the other file")
+        self.assertTrue(any("provider limit" in p for p in c.problems))
+        self.assertTrue(any(p.startswith(lg.QUOTED_PREFIX) for p in c.problems))
+
+    def test_unconfirmed_hit_does_not_advise_running_less_often(self):
+        cycles = []
+        for i in range(4):
+            cycles.append(self._cycle("summary: `usage limit reached` elsewhere"))
+        self.assertIsNone(lg.suggest_interval(cycles, None))
+
+    def test_confirmed_hit_still_advises(self):
+        cycles = []
+        for i in range(4):
+            cycles.append(self._cycle("claude: usage limit reached"))
+        s = lg.suggest_interval(cycles, None)
+        self.assertIsNotNone(s)
+        self.assertIn("provider limit", s)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

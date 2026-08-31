@@ -59,7 +59,7 @@ chmod +x loopguard.py
 ```
 
 ```
-loopguard 0.4.0: 4 cycle(s), 3 needing attention
+loopguard 0.5.0: 4 cycle(s), 3 needing attention
 
 !! [1] 2026-08-28 05:00  0m  rc=1  (2026-08-28.log)
       - provider limit hit ('usage limit') - widen the interval
@@ -152,7 +152,7 @@ cycles.** "Has this loop stopped?" is answerable from the timestamp on the last
 line. So a log that yields no cycles now gets the checks that raw lines support:
 
 ```
-loopguard 0.4.0: no cycles could be read.
+loopguard 0.5.0: no cycles could be read.
 Without start/end markers, only these checks can run:
 
   agent.log
@@ -186,7 +186,7 @@ The same applies per-file in a mixed directory. A file nobody can parse still
 gets read for provider limits and auth failures, and **a finding there counts**:
 
 ```
-loopguard 0.4.0: 1 cycle(s), 0 needing attention, plus 1 file(s) with no cycles but something to say
+loopguard 0.5.0: 1 cycle(s), 0 needing attention, plus 1 file(s) with no cycles but something to say
 
 !! other.log (no cycles read): provider limit hit ('usage limit') - widen the interval
 
@@ -195,6 +195,29 @@ ok [1] 2026-08-31 05:00  42m  rc=0  (good.log)
 
 Before 0.4.0 that run printed `0 needing attention` and exited `0`. The finding
 was in the stderr preamble about regexes, which is not where a cron line looks.
+
+## Sentences about failures, versus failures
+
+A log written by an agent contains the agent's notes about its own log, in the
+same vocabulary, in the same file. Two shapes of that were caught the hard way:
+
+```
+no evidence of a usage limit this cycle          -> ignored (negated)
+the unreadable file contained `usage limit`      -> reported as unconfirmed
+ERROR {"type":"rate_limit_error","message":"..."} -> reported as a hit
+claude: usage limit reached, resets at 05:00      -> reported as a hit
+```
+
+Quoted matches are **not filtered out**. A real provider error usually arrives
+quoted, so dropping them would trade a false alarm for a missed outage. They are
+reported with an `unconfirmed:` prefix, they still make the exit code non-zero,
+and they are the one thing that does not feed the `suggestion:` line — that line
+advises changing your schedule and should need an unambiguous match. A quoted
+match on a line carrying a severity word or an API error type counts as a hit.
+
+Version 0.4.0 read this loop's own cycle summary — which quotes `usage limit
+reached` while describing a bug about that string — as a provider limit, and
+advised running less often on a loop that has never hit one.
 
 ## Timestamps it can read
 
@@ -250,7 +273,7 @@ Standard library only, no test framework to install:
 python3 -m unittest discover -s . -v      # from the directory holding loopguard.py
 ```
 
-90 tests. The ones named `test_negated_*` and `test_thin_output_on_unfinished_*`
+101 tests. The ones named `test_negated_*` and `test_thin_output_on_unfinished_*`
 are regressions for two bugs that shipped: reading the agent's own sentence
 *"no evidence of a usage limit"* as a usage limit and advising a slowdown, and
 reporting the cycle currently running loopguard as having done nothing. Both are

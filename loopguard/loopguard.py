@@ -55,7 +55,7 @@ from dataclasses import dataclass, field, asdict
 from datetime import date, datetime, timedelta, timezone
 from typing import Iterable, Iterator
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 
 # --- how a cycle is delimited in the log ------------------------------------
 # The defaults match a loop that brackets each run with a start and end line,
@@ -122,6 +122,75 @@ NEGATION_PATTERNS = [
 
 # How many characters either side of a match are inspected for a negation.
 NEGATION_WINDOW = 24
+
+# The negation list above catches "no usage limit". It does not catch the other
+# way a log talks about a phrase without reporting it: quoting it.
+#
+#     ... the tool detected `usage limit reached` in the unreadable file ...
+#
+# That line is a report *about* a match. Version 0.4.0 read it as a provider
+# limit on a loop that had never hit one, and then advised running less often.
+# It is the same failure as the negation one, five versions later, which is the
+# argument for handling the category rather than the sentence.
+#
+# ⚠ Quoted is NOT the same as harmless, and this must not become a filter.
+# A real provider error arrives quoted more often than not:
+#
+#     ERROR {"type":"rate_limit_error","message":"usage limit reached"}
+#
+# Dropping quoted matches would trade a false alarm for a missed outage, which
+# is the worse of the two for a health check. So a quoted-only match is still
+# reported and still counted as a finding - it is worded as unconfirmed, and it
+# is kept out of the "run less often" recommendation, because that advice acts
+# on the loop and should need an unambiguous match.
+# Reported findings that rest only on a quoted mention are prefixed, so that
+# every place computing a verdict can tell "found it" from "found a sentence
+# about it" without re-parsing the wording. B25 was three such places.
+QUOTED_PREFIX = "unconfirmed: "
+
+QUOTE_PAIRS = [("`", "`"), ('"', '"'), ("'", "'"),
+               ("「", "」"), ("“", "”")]
+
+
+# A quoted match on a line that also carries a machine severity or an API error
+# type is a log record, not prose about one. Structured logs quote everything --
+#     ERROR {"type":"rate_limit_error","message":"usage limit reached"}
+# -- so without this, the commonest shape of a *real* provider failure would be
+# the one downgraded. The tokens are deliberately ones prose does not use in
+# passing; the sentence that caused all this ("... `usage limit reached` in the
+# unreadable file ...") carries none of them.
+MACHINE_LINE_RE = re.compile(
+    r"(?:\bERROR\b|\bFATAL\b|\bCRITICAL\b|_error\b|\b429\b|\b529\b|"
+    r"\bHTTP/\d|\bstatus[\"']?\s*[:=]\s*[\"']?(?:429|529))")
+
+
+def _machine_record(text: str, start: int, end: int) -> bool:
+    """True if the line holding this match reads as an emitted log record."""
+    line_start = text.rfind("\n", 0, start) + 1
+    line_end = text.find("\n", end)
+    line = text[line_start:line_end if line_end != -1 else len(text)]
+    return bool(MACHINE_LINE_RE.search(line))
+
+
+def _quoted(text: str, start: int, end: int) -> bool:
+    """True if this match sits inside quotation marks on its own line.
+
+    Line-scoped on purpose: an apostrophe or a stray backtick earlier in the
+    file must not silently re-classify everything after it.
+    """
+    line_start = text.rfind("\n", 0, start) + 1
+    line_end = text.find("\n", end)
+    if line_end == -1:
+        line_end = len(text)
+    before = text[line_start:start]
+    after = text[end:line_end]
+    for opener, closer in QUOTE_PAIRS:
+        if opener == closer:
+            if before.count(opener) % 2 == 1 and closer in after:
+                return True
+        elif opener in before and closer in after:
+            return True
+    return False
 
 AUTH_PATTERNS = [
     r"not (?:logged in|authenticated)",
@@ -321,30 +390,49 @@ def _negated(text: str, start: int, end: int) -> bool:
     return any(r.search(window) for r in NEGATION_RES)
 
 
-def _first_match(res: list[re.Pattern], text: str) -> tuple[str | None, int]:
-    """First match not sitting in a negation, plus a count of the ones skipped."""
+def _first_match(res: list[re.Pattern], text: str) -> tuple[str | None, int, bool]:
+    """First non-negated match, how many negated ones were skipped, and whether
+    the match returned was only ever seen inside quotation marks.
+
+    An unquoted match anywhere wins over a quoted one, wherever it appears in
+    the file: one line reporting the real thing outranks any number of lines
+    discussing it.
+    """
     skipped = 0
+    quoted_hit = None
     for r in res:
         for m in r.finditer(text):
             if _negated(text, m.start(), m.end()):
                 skipped += 1
                 continue
-            return m.group(0), skipped
-    return None, skipped
+            if _quoted(text, m.start(), m.end()) and not _machine_record(text, m.start(), m.end()):
+                if quoted_hit is None:
+                    quoted_hit = m.group(0)
+                continue
+            return m.group(0), skipped, False
+    if quoted_hit is not None:
+        return quoted_hit, skipped, True
+    return None, skipped, False
 
 
 def judge(cycle: Cycle, timeout_s: int | None, min_output: int = THIN_OUTPUT_CHARS) -> None:
     """Fill in cycle.problems / cycle.notes. Ordered most severe first."""
     body = cycle.body
 
-    hit, skipped = _first_match(AUTH_RES, body)
-    if hit:
+    hit, skipped, quoted = _first_match(AUTH_RES, body)
+    if hit and quoted:
+        cycle.problems.append(QUOTED_PREFIX + f"authentication failure ({hit!r}) appears only inside "
+                              "quotation marks - a line about the phrase looks like this; check by hand")
+    elif hit:
         cycle.problems.append(f"authentication failed ({hit!r}) - the loop cannot run until a human logs in")
     elif skipped:
         cycle.notes.append(f"{skipped} auth-like phrase(s) ignored as negated - check by hand if in doubt")
 
-    hit, skipped = _first_match(LIMIT_RES, body)
-    if hit:
+    hit, skipped, quoted = _first_match(LIMIT_RES, body)
+    if hit and quoted:
+        cycle.problems.append(QUOTED_PREFIX + f"provider limit ({hit!r}) appears only inside quotation "
+                              "marks - a line about the phrase looks like this; check by hand")
+    elif hit:
         cycle.problems.append(f"provider limit hit ({hit!r}) - widen the interval")
     elif skipped:
         cycle.notes.append(f"{skipped} limit-like phrase(s) ignored as negated (e.g. \"no usage limit\") - check by hand if in doubt")
@@ -491,7 +579,11 @@ def suggest_interval(cycles: list[Cycle], current_per_day: int | None) -> str | 
     recent = [c for c in cycles if not c.unfinished][-8:]
     if not recent:
         return None
-    limited = sum(1 for c in recent if any("provider limit" in p for p in c.problems))
+    # ⚠ Only unambiguous hits steer the schedule. A quoted mention is reported
+    # to the reader but must not, on its own, tell a loop to run less often.
+    limited = sum(1 for c in recent
+                  if any("provider limit" in p and not p.startswith(QUOTED_PREFIX)
+                         for p in c.problems))
     thin = sum(1 for c in recent if any("almost no output" in p for p in c.problems))
 
     if limited:
@@ -705,12 +797,16 @@ def flat_scan(name: str, text: str, now: datetime,
                               f"stopped (last line {scan.last_activity:%Y-%m-%d %H:%M}; "
                               f"--stale-after {_dur(stale_after_s)})")
 
-    hit, _ = _first_match(LIMIT_RES, text)
+    hit, _, quoted = _first_match(LIMIT_RES, text)
     if hit:
-        scan.limit = f"provider limit hit ({hit!r}) somewhere in this file - widen the interval"
-    hit, _ = _first_match(AUTH_RES, text)
+        scan.limit = (QUOTED_PREFIX + f"provider limit ({hit!r}) in this file appears only inside "
+                      "quotation marks - check by hand") if quoted else \
+            f"provider limit hit ({hit!r}) somewhere in this file - widen the interval"
+    hit, _, quoted = _first_match(AUTH_RES, text)
     if hit:
-        scan.auth = f"authentication failed ({hit!r}) somewhere in this file - a human has to log in"
+        scan.auth = (QUOTED_PREFIX + f"authentication failure ({hit!r}) in this file appears only "
+                     "inside quotation marks - check by hand") if quoted else \
+            f"authentication failed ({hit!r}) somewhere in this file - a human has to log in"
     return scan
 
 
