@@ -8,6 +8,7 @@ CLI agent invoked from cron) and reports, per cycle:
   * whether the provider refused the run (usage / rate limit)
   * whether the cycle produced any real output, or just spun
   * whether cycles are repeating themselves (stuck loop)
+  * whether the loop has stopped running at all (no cycle for far too long)
 
 It exits non-zero when something needs attention, so it can itself be run
 from cron and piped into a notification.
@@ -18,16 +19,21 @@ Usage:
     loopguard.py logs/                     # scan a directory of log files
     loopguard.py logs/2026-08-31.log       # a single file
     loopguard.py logs/ --json              # machine readable
-    loopguard.py logs/ --since 3           # only the last 3 days of files
+    loopguard.py logs/ --since 3           # only cycles from the last 3 days
 
 When a log yields no cycles -- because the loop brackets its runs differently
 from the default -- loopguard says so per file and prints a --start-re/--end-re
 guessed from the log's own lines, rather than silently reporting on whatever
 else it could read.
 
+The loop stopping is the failure this tool exists to catch, and it is the
+one that leaves no evidence: a loop that no longer runs writes no cycle, so
+every cycle on record still reads "ok". loopguard therefore also judges the
+silence after the last cycle, against the loop's own median interval.
+
 Exit codes:
     0  all cycles healthy
-    1  at least one cycle needs attention
+    1  at least one cycle needs attention, or the loop appears to have stopped
     2  could not read any log
 """
 
@@ -40,10 +46,10 @@ import os
 import re
 import sys
 from dataclasses import dataclass, field, asdict
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from typing import Iterable, Iterator
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 # --- how a cycle is delimited in the log ------------------------------------
 # The defaults match a loop that brackets each run with a start and end line,
@@ -125,6 +131,19 @@ COMPARABLE_CHARS = 60
 # Two cycles whose output is this similar are treated as the loop spinning.
 REPEAT_SIMILARITY = 0.92
 
+# --- deciding that the loop itself has stopped ------------------------------
+# A stopped loop is invisible in a log: the last cycle it did run is still a
+# healthy one. So the silence *after* the last cycle is judged too, against the
+# loop's own median interval rather than a number picked here -- a loop that
+# runs every 15 minutes and one that runs twice a day cannot share a threshold.
+STALE_MULTIPLIER = 3
+# ...but never call a loop stopped sooner than this. One missed run on a fast
+# loop is normal; being woken for it is not.
+MIN_STALE_S = 3600
+# Fewer starts than this and there is no "usual interval" to compare against,
+# so loopguard says nothing rather than guessing from a single gap.
+MIN_STARTS_FOR_INTERVAL = 3
+
 # --- guessing a marker for a log loopguard cannot read ----------------------
 # Used only when a file yields no cycles. The point is to hand back a command
 # line that works, not to parse the log: a wrong guess costs the reader one
@@ -174,6 +193,7 @@ class Cycle:
     problems: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
     unfinished: bool = False  # start marker seen, end marker never arrived
+    abandoned: bool = False   # unfinished, and a later cycle proves it is not still running
 
     @property
     def duration_s(self) -> float | None:
@@ -201,7 +221,12 @@ def split_cycles(text: str, source: str, start_re: re.Pattern, end_re: re.Patter
 
     A cycle runs from a start marker to the next end marker. A start with no
     end means the run is either still going or died without writing its
-    footer -- both worth reporting, so it is kept.
+    footer -- both worth reporting, so it is kept and marked `unfinished`.
+
+    Until 0.3.0 only the *last* cycle in a file got that mark. A cycle
+    interrupted by the next start -- the shape a hard kill leaves -- was
+    appended with no end, no rc and no flag, and printed as `ok ... ? rc=?`.
+    The tool said "I cannot tell what happened here" and counted it healthy.
     """
     cycles: list[Cycle] = []
     current: Cycle | None = None
@@ -212,6 +237,9 @@ def split_cycles(text: str, source: str, start_re: re.Pattern, end_re: re.Patter
         if m_start:
             if current is not None:
                 current.body = "\n".join(buf)
+                current.unfinished = True
+                current.notes.append(
+                    "no end marker: the next cycle started before this one finished")
                 cycles.append(current)
             current = Cycle(source=source, started=_parse_ts(m_start.group("ts")))
             buf = []
@@ -284,7 +312,7 @@ def judge(cycle: Cycle, timeout_s: int | None, min_output: int = THIN_OUTPUT_CHA
 
     if len(body.strip()) < min_output:
         msg = f"almost no output ({len(body.strip())} chars) - the cycle probably did nothing"
-        if cycle.unfinished:
+        if cycle.unfinished and not cycle.abandoned:
             # The cycle is very likely still running -- and if loopguard is being
             # run *by* that cycle, its own output has not been written yet.
             cycle.notes.append("output not written yet (cycle still in progress)")
@@ -297,6 +325,103 @@ def judge(cycle: Cycle, timeout_s: int | None, min_output: int = THIN_OUTPUT_CHA
             cycle.notes.append(f"ran {d/60:.0f} min, close to the {timeout_s/60:.0f} min limit")
         if d < 30 and cycle.rc == 0:
             cycle.notes.append(f"finished in {d:.0f}s - suspiciously fast for a full cycle")
+
+
+def _dur(seconds: float) -> str:
+    """A duration a human reads at a glance: 35m, 4h 12m, 9d 13h."""
+    s = int(round(seconds))
+    if s < 3600:
+        return f"{s // 60}m"
+    if s < 86400:
+        return f"{s // 3600}h {(s % 3600) // 60:02d}m"
+    return f"{s // 86400}d {(s % 86400) // 3600:02d}h"
+
+
+def median_interval_s(cycles: list[Cycle]) -> float | None:
+    """The loop's usual gap between starts, or None if there are too few."""
+    starts = sorted(c.started for c in cycles if c.started)
+    if len(starts) < MIN_STARTS_FOR_INTERVAL:
+        return None
+    gaps = sorted((b - a).total_seconds() for a, b in zip(starts, starts[1:]))
+    mid = len(gaps) // 2
+    return gaps[mid] if len(gaps) % 2 else (gaps[mid - 1] + gaps[mid]) / 2
+
+
+def check_staleness(cycles: list[Cycle], now: datetime,
+                    stale_after_s: int | None = None) -> str | None:
+    """One line if the loop looks stopped, else None.
+
+    This is the only check that judges something the log does not contain.
+    Every cycle in the file can be healthy while the loop has been dead for a
+    week: the last run to happen wrote a clean footer and then nothing ever
+    wrote again. Reporting "0 needing attention" there is the tool failing at
+    its one job, so the gap between the last start and now is a finding.
+    """
+    starts = [c.started for c in cycles if c.started]
+    if not starts:
+        return None
+    last = max(starts)
+    silence = (now - last).total_seconds()
+    if silence < 0:
+        return None  # log is ahead of the clock; not something to guess about
+
+    if stale_after_s is None:
+        median = median_interval_s(cycles)
+        if median is None:
+            return None  # no idea what normal is for this loop
+        limit = max(median * STALE_MULTIPLIER, MIN_STALE_S)
+        because = f"it had been starting about every {_dur(median)}"
+    else:
+        if stale_after_s <= 0:
+            return None  # explicitly switched off
+        limit = stale_after_s
+        because = f"--stale-after {_dur(stale_after_s)}"
+
+    if silence <= limit:
+        return None
+    return (f"no cycle has started for {_dur(silence)} - the loop may have stopped "
+            f"(last start {last:%Y-%m-%d %H:%M}; {because})")
+
+
+def flag_abandoned(cycles: list[Cycle]) -> None:
+    """Mark cycles that never wrote an end marker *and* were overtaken.
+
+    An unfinished cycle at the end of the log is usually the one running right
+    now -- often the very cycle calling loopguard. An unfinished cycle with a
+    later start after it is not running: something killed it hard enough that
+    it never wrote its own footer, and nothing said so at the time.
+    """
+    starts = [c.started for c in cycles if c.started]
+    for c in cycles:
+        if not c.unfinished or c.started is None:
+            continue
+        later = [t for t in starts if t > c.started]
+        if not later:
+            continue
+        c.abandoned = True
+        c.problems.append(
+            f"started but never wrote an end marker, and the next cycle began at "
+            f"{min(later):%Y-%m-%d %H:%M} - this run was killed, not finished"
+        )
+
+
+def filter_since(cycles: list[Cycle], days: int, today: date) -> tuple[list[Cycle], int, int]:
+    """Keep cycles started within the last `days` calendar days (today is day 1).
+
+    Counted in cycles, not files: one log file can hold a month, and a
+    directory can hold files whose names say nothing about their dates.
+    """
+    cutoff = today - timedelta(days=days - 1)
+    kept, dropped, undated = [], 0, 0
+    for c in cycles:
+        if c.started is None:
+            undated += 1
+            kept.append(c)  # cannot be dated, so it is never silently dropped
+        elif c.started.date() >= cutoff:
+            kept.append(c)
+        else:
+            dropped += 1
+    return kept, dropped, undated
 
 
 def flag_repeats(cycles: list[Cycle]) -> None:
@@ -461,7 +586,14 @@ def explain_unread(name: str, text: str) -> list[str]:
     return lines
 
 
-def collect_logs(paths: list[str], since_days: int | None) -> list[tuple[str, str]]:
+def collect_logs(paths: list[str]) -> list[tuple[str, str]]:
+    """Every log named, read in name order. Nothing is dropped here.
+
+    Until 0.3.0 this took a --since count and returned `files[-N:]`, which was
+    the wrong unit twice over: the flag is in days, and sorted-by-name puts
+    `watcher.log` after `2026-08-31.log`. Selecting by date is now done on
+    cycles, after they have been parsed, where a date actually exists.
+    """
     files: list[str] = []
     for p in paths:
         if os.path.isdir(p):
@@ -475,9 +607,6 @@ def collect_logs(paths: list[str], since_days: int | None) -> list[tuple[str, st
         else:
             print(f"loopguard: no such file or directory: {p}", file=sys.stderr)
 
-    if since_days is not None:
-        files = files[-since_days:]
-
     out = []
     for f in files:
         try:
@@ -488,11 +617,16 @@ def collect_logs(paths: list[str], since_days: int | None) -> list[tuple[str, st
     return out
 
 
-def render(cycles: list[Cycle], advice: str | None) -> str:
+def render(cycles: list[Cycle], advice: str | None, stale: str | None = None) -> str:
     lines = []
     bad = [c for c in cycles if not c.ok]
     lines.append(f"loopguard {__version__}: {len(cycles)} cycle(s), {len(bad)} needing attention")
     lines.append("")
+    if stale:
+        # Above the per-cycle list on purpose: every line below it can say "ok"
+        # and still describe a loop that has not run since Tuesday.
+        lines.append(f"!! {stale}")
+        lines.append("")
 
     for i, c in enumerate(cycles, 1):
         when = c.started.strftime("%Y-%m-%d %H:%M") if c.started else "unknown time"
@@ -517,10 +651,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     ap.add_argument("paths", nargs="+", help="log file(s) or a directory of them")
     ap.add_argument("--json", action="store_true", help="emit JSON instead of a report")
-    ap.add_argument("--since", type=int, metavar="N", help="only the last N log files")
+    ap.add_argument("--since", type=int, metavar="DAYS",
+                    help="only cycles started in the last DAYS days (1 = today only)")
     ap.add_argument("--timeout", type=int, metavar="SECONDS",
                     help="the per-cycle timeout the loop uses, so near-misses can be flagged")
     ap.add_argument("--per-day", type=int, metavar="N", help="how many times a day the loop currently runs")
+    ap.add_argument("--stale-after", type=int, metavar="MINUTES",
+                    help="report the loop as stopped after this much silence "
+                         f"(default: {STALE_MULTIPLIER}x its own median interval, "
+                         f"at least {MIN_STALE_S // 60} min; 0 disables)")
     ap.add_argument("--min-output", type=int, default=THIN_OUTPUT_CHARS, metavar="CHARS",
                     help=f"below this many characters a cycle counts as having done nothing (default {THIN_OUTPUT_CHARS})")
     ap.add_argument("--start-re", default=DEFAULT_START_RE, help="regex for a cycle start line (needs a 'ts' group)")
@@ -535,7 +674,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"loopguard: bad regex: {e}", file=sys.stderr)
         return 2
 
-    logs = collect_logs(args.paths, args.since)
+    if args.since is not None and args.since < 1:
+        print("loopguard: --since counts days and starts at 1 (1 = today only)", file=sys.stderr)
+        return 2
+
+    logs = collect_logs(args.paths)
     if not logs:
         print("loopguard: no logs read", file=sys.stderr)
         return 2
@@ -567,6 +710,34 @@ def main(argv: list[str] | None = None) -> int:
     if not cycles:
         return 2
 
+    cycles.sort(key=lambda c: (c.started is None, c.started or datetime.min))
+
+    # Staleness is measured against every cycle on record, before --since
+    # narrows the view: "nothing has run for four days" is the same fact
+    # whether or not you asked to look at today.
+    stale = check_staleness(
+        cycles, datetime.now(),
+        args.stale_after * 60 if args.stale_after is not None else None,
+    )
+
+    excluded = 0
+    if args.since is not None:
+        before = len(cycles)
+        cutoff = date.today() - timedelta(days=args.since - 1)
+        cycles, excluded, undated = filter_since(cycles, args.since, date.today())
+        print(f"loopguard: --since {args.since} = cycles started on or after {cutoff} "
+              f"({len(cycles)} of {before} kept, {excluded} older excluded)", file=sys.stderr)
+        if undated:
+            print(f"loopguard: {undated} cycle(s) carry no readable start time and were kept",
+                  file=sys.stderr)
+        if not cycles:
+            # Not an empty result: the loop did not run in the window asked about.
+            print(f"loopguard: no cycle started in the last {args.since} day(s)", file=sys.stderr)
+            if stale:
+                print(f"loopguard: {stale}", file=sys.stderr)
+            return 1
+
+    flag_abandoned(cycles)
     for c in cycles:
         judge(c, args.timeout, args.min_output)
     flag_repeats(cycles)
@@ -578,14 +749,16 @@ def main(argv: list[str] | None = None) -> int:
                 "version": __version__,
                 "cycles": [c.as_dict() for c in cycles],
                 "suggestion": advice,
+                "stale": stale,
                 "files_without_cycles": [n for n, _ in unread],
+                "cycles_excluded_by_since": excluded,
             },
             ensure_ascii=False, indent=2,
         ))
     else:
-        print(render(cycles, advice))
+        print(render(cycles, advice, stale))
 
-    return 1 if any(not c.ok for c in cycles) else 0
+    return 1 if (stale or any(not c.ok for c in cycles)) else 0
 
 
 if __name__ == "__main__":

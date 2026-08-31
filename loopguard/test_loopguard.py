@@ -10,12 +10,14 @@ regression tests for bugs that shipped in 0.1.0.
 """
 
 import io
+import json
 import os
 import re
 import sys
 import tempfile
 import unittest
 from contextlib import redirect_stdout, redirect_stderr
+from datetime import date, datetime, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -38,6 +40,20 @@ def log(*cycles: tuple[str, str, object]) -> str:
 
 def cycles_of(text: str) -> list[lg.Cycle]:
     return lg.split_cycles(text, "test.log", START, END)
+
+
+def ago(*, days: float = 0, minutes: float = 0) -> str:
+    """A timestamp that much before now, in the format the default markers use.
+
+    Relative on purpose: a fixture with dates written into it stops testing
+    staleness the day after it is written, and starts testing the calendar.
+    """
+    when = datetime.now() - timedelta(days=days, minutes=minutes)
+    return when.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def dated_cycles(*starts: datetime) -> list[lg.Cycle]:
+    return [lg.Cycle(source="test.log", started=t, body="A" * 200, rc=0) for t in starts]
 
 
 def judged(body: str, rc: object = 0, timeout=None, min_output=lg.THIN_OUTPUT_CHARS) -> lg.Cycle:
@@ -426,6 +442,186 @@ class SilentlySkippedFiles(unittest.TestCase):
             with redirect_stdout(io.StringIO()), redirect_stderr(err2):
                 lg.main([p, "--start-re", r"(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) NOPE"])
             self.assertIn("with the markers given", err2.getvalue())
+
+
+class Staleness(unittest.TestCase):
+    """A loop that has stopped writes no failing cycle. It writes nothing."""
+
+    def _every(self, count: int, gap_min: float, silence_min: float) -> list[lg.Cycle]:
+        now = datetime.now()
+        last = now - timedelta(minutes=silence_min)
+        return dated_cycles(*[last - timedelta(minutes=gap_min * i)
+                              for i in reversed(range(count))])
+
+    def test_dead_loop_is_reported_though_every_cycle_says_ok(self):
+        # The failure this whole check exists for: daily cycles, all rc=0,
+        # nothing since. Before 0.3.0 this printed "0 needing attention".
+        cycles = self._every(4, gap_min=1440, silence_min=9 * 1440)
+        msg = lg.check_staleness(cycles, datetime.now())
+        self.assertIsNotNone(msg)
+        self.assertIn("may have stopped", msg)
+        self.assertIn("9d", msg)
+
+    def test_a_running_loop_is_not_stale(self):
+        cycles = self._every(6, gap_min=90, silence_min=20)
+        self.assertIsNone(lg.check_staleness(cycles, datetime.now()))
+
+    def test_one_missed_run_on_a_fast_loop_does_not_alarm(self):
+        # Every 5 minutes, silent for 20. Three intervals, but 20 minutes of
+        # quiet is not a stopped loop -- MIN_STALE_S is the floor that says so.
+        cycles = self._every(8, gap_min=5, silence_min=20)
+        self.assertIsNone(lg.check_staleness(cycles, datetime.now()))
+
+    def test_too_few_cycles_to_know_what_normal_is(self):
+        cycles = self._every(2, gap_min=90, silence_min=10 * 1440)
+        self.assertIsNone(lg.check_staleness(cycles, datetime.now()),
+                          "with two starts there is one gap; that is not an interval")
+
+    def test_explicit_threshold_works_where_the_guess_declines(self):
+        cycles = self._every(2, gap_min=90, silence_min=300)
+        self.assertIsNone(lg.check_staleness(cycles, datetime.now()))
+        msg = lg.check_staleness(cycles, datetime.now(), stale_after_s=60 * 60)
+        self.assertIsNotNone(msg)
+        self.assertIn("--stale-after", msg)
+
+    def test_zero_disables_the_check(self):
+        cycles = self._every(5, gap_min=1440, silence_min=30 * 1440)
+        self.assertIsNotNone(lg.check_staleness(cycles, datetime.now()))
+        self.assertIsNone(lg.check_staleness(cycles, datetime.now(), stale_after_s=0))
+
+    def test_a_log_ahead_of_the_clock_is_not_stale(self):
+        now = datetime.now()
+        cycles = dated_cycles(*[now + timedelta(minutes=m) for m in (0, 90, 180)])
+        self.assertIsNone(lg.check_staleness(cycles, now),
+                          "a clock skew is not evidence about the loop")
+
+    def test_no_dated_cycle_means_no_opinion(self):
+        cycles = [lg.Cycle(source="test.log", started=None, body="A" * 200)]
+        self.assertIsNone(lg.check_staleness(cycles, datetime.now()))
+
+    def test_median_ignores_one_long_outage(self):
+        now = datetime.now()
+        starts = [now - timedelta(minutes=m) for m in (5000, 200, 110, 20)]
+        median = lg.median_interval_s(dated_cycles(*starts))
+        self.assertAlmostEqual(median / 60, 90, delta=1,
+                               msg="one 80-hour gap must not become the loop's normal")
+
+    def test_duration_reads_at_a_glance(self):
+        self.assertEqual(lg._dur(35 * 60), "35m")
+        self.assertEqual(lg._dur(4 * 3600 + 12 * 60), "4h 12m")
+        self.assertEqual(lg._dur(9 * 86400 + 13 * 3600), "9d 13h")
+
+
+class SinceDays(unittest.TestCase):
+    """--since counts days. Until 0.3.0 it counted files, in name order."""
+
+    def _run_dir(self, files: dict, *argv: str) -> tuple[int, str, str]:
+        with tempfile.TemporaryDirectory() as d:
+            for name, body in files.items():
+                with open(os.path.join(d, name), "w", encoding="utf-8") as fh:
+                    fh.write(body)
+            out, err = io.StringIO(), io.StringIO()
+            with redirect_stdout(out), redirect_stderr(err):
+                rc = lg.main([d, "--stale-after", "0", *argv])
+            return rc, out.getvalue(), err.getvalue()
+
+    def test_filters_cycles_inside_one_file(self):
+        # Old behaviour: one file in, one file out, --since did nothing at all.
+        # distinct bodies: identical ones are a stuck loop, a different finding
+        body = log(*[(ago(days=n), chr(65 + n) * 200, 0) for n in (3, 2, 1, 0)])
+        rc, out, _ = self._run_dir({"all.log": body}, "--since", "2")
+        self.assertEqual(rc, 0)
+        self.assertIn("2 cycle(s)", out)
+
+    def test_does_not_choose_files_by_name(self):
+        # Regression: sorted() puts watcher.log last, so files[-1:] was it, and
+        # the day actually asked for was dropped without a word.
+        rc, out, err = self._run_dir(
+            {"2026-08-31.log": log((ago(days=0), "A" * 200, 0)),
+             "watcher.log": "a service log with no cycle markers at all\n"},
+            "--since", "1")
+        self.assertEqual(rc, 0)
+        self.assertIn("1 cycle(s)", out)
+        self.assertIn("watcher.log", err, "the unreadable file is still named")
+
+    def test_says_what_it_excluded(self):
+        body = log(*[(ago(days=n), "A" * 200, 0) for n in (5, 4, 0)])
+        _, _, err = self._run_dir({"all.log": body}, "--since", "1")
+        self.assertIn("2 older excluded", err)
+
+    def test_an_empty_window_is_a_finding_not_a_blank_report(self):
+        # "Nothing ran today" is the answer, not the absence of one.
+        body = log(*[(ago(days=n), "A" * 200, 0) for n in (9, 8, 7)])
+        rc, _, err = self._run_dir({"all.log": body}, "--since", "1")
+        self.assertEqual(rc, 1, "an idle window needs attention; 2 means unreadable")
+        self.assertIn("no cycle started in the last 1 day", err)
+
+    def test_zero_days_is_rejected(self):
+        rc, _, err = self._run_dir({"a.log": log((ago(days=0), "A" * 200, 0))}, "--since", "0")
+        self.assertEqual(rc, 2)
+        self.assertIn("--since counts days", err)
+
+    def test_undated_cycles_are_kept_not_dropped(self):
+        cycles = dated_cycles(datetime.now(), datetime.now() - timedelta(days=9))
+        cycles.append(lg.Cycle(source="x", started=None, body="A" * 200))
+        kept, dropped, undated = lg.filter_since(cycles, 1, date.today())
+        self.assertEqual((len(kept), dropped, undated), (2, 1, 1))
+
+    def test_json_reports_the_exclusion(self):
+        body = log(*[(ago(days=n), "A" * 200, 0) for n in (6, 0)])
+        _, out, _ = self._run_dir({"all.log": body}, "--since", "1", "--json")
+        self.assertEqual(json.loads(out)["cycles_excluded_by_since"], 1)
+
+
+class AbandonedCycles(unittest.TestCase):
+    """A start with no end, overtaken by a later start, is a killed run."""
+
+    KILLED = log(("2026-08-23 09:00:00", "B" * 200, None),
+                 ("2026-08-24 09:00:00", "C" * 200, 0))
+
+    def test_interrupted_cycle_is_marked_unfinished(self):
+        cycles = cycles_of(self.KILLED)
+        self.assertTrue(cycles[0].unfinished,
+                        "only the last cycle in the file got this mark before 0.3.0")
+        self.assertIsNone(cycles[0].rc)
+
+    def test_it_becomes_a_problem_not_a_note(self):
+        cycles = cycles_of(self.KILLED)
+        lg.flag_abandoned(cycles)
+        self.assertTrue(cycles[0].abandoned)
+        self.assertFalse(cycles[0].ok)
+        self.assertIn("killed, not finished", cycles[0].problems[0])
+        self.assertTrue(cycles[1].ok)
+
+    def test_the_cycle_still_running_is_left_alone(self):
+        # loopguard is usually run *by* the last cycle. Flagging that one would
+        # make the tool fail on every healthy loop that uses it.
+        cycles = cycles_of(log(("2026-08-24 09:00:00", "C" * 200, 0),
+                               ("2026-08-24 10:00:00", "D" * 200, None)))
+        lg.flag_abandoned(cycles)
+        self.assertFalse(cycles[1].abandoned)
+        self.assertTrue(cycles[1].ok)
+
+    def test_a_killed_cycle_is_not_excused_for_thin_output(self):
+        cycles = cycles_of(log(("2026-08-23 09:00:00", "x", None),
+                               ("2026-08-24 09:00:00", "C" * 200, 0)))
+        lg.flag_abandoned(cycles)
+        lg.judge(cycles[0], None)
+        self.assertTrue(any("almost no output" in p for p in cycles[0].problems))
+        self.assertFalse(any("still in progress" in n for n in cycles[0].notes),
+                         "it is not in progress; a later cycle already started")
+
+    def test_cli_exits_one(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "a.log")
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(log((ago(days=0, minutes=120), "B" * 200, None),
+                             (ago(days=0, minutes=30), "C" * 200, 0)))
+            out, err = io.StringIO(), io.StringIO()
+            with redirect_stdout(out), redirect_stderr(err):
+                rc = lg.main([path, "--stale-after", "0"])
+        self.assertEqual(rc, 1)
+        self.assertIn("killed, not finished", out.getvalue())
 
 
 if __name__ == "__main__":
