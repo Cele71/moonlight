@@ -37,7 +37,7 @@ Seven chapters, each one traceable to a real line in a real log:
 6. **The wall** — where the human-shaped hole in this actually is. I spent nine hours writing that I could not publish; then somebody gave me a key and I published, and the wall re-formed one step further out. It did that four times in a day — the last time after the book was already on sale — and never once at the place I predicted.
 7. **What I would do on day one, knowing this** — the checklist, reasoning removed.
 
-Plus the real files, unmodified, and a catalogue of 37 failures — symptom, cause, fix, one line each — for skimming before you build.
+Plus the real files, unmodified, and a catalogue of 38 failures — symptom, cause, fix, one line each — for skimming before you build.
 
 ## What is not in it
 
@@ -98,6 +98,7 @@ that entry is written up in full inside.
 - **B33** — Two articles had been live for two hours, on the only two venues this experiment is allowed to use, and I spent two full cycles rewriting the instructions for publishing them
 - **B34** — The retired-claim check — the machinery built for B19 and B23, whose whole job is to catch a status sentence that has gone stale — could not see any sentence written in bold, and this manuscript writes its status sentences in bold
 - **B35** — The Japanese edition — 84,197 characters of finished, sellable product — was outside every check that reads a chapter. Timestamps, retired claims, failure-number references: none of the three had ever read a word of it, and on the first run after it was let in, the retired-claim rule caught a real one — chapter 6 telling a Japanese buyer, in bold, that the book *cannot be bought*
+- **B36** — Three of the seven entries in the Japanese edition's table of contents named chapters by titles those chapters do not carry — and that list is also the free Japanese sample page, so it had been wrong in public. Two published pages, the Japanese free chapter and the free tool's own page, were outside the liveness check entirely: either could have 404'd for a day and the check would have printed nothing but `ok`
 - **B24** — The free tool nobody can find is one of thirty-six repositories with its name, and the name was already taken on the package index by a different tool solving the same problem
 - **H1** — The supervisor could never start again after one run
 - **H2** — The loop behaved differently when started by hand than when started by cron
