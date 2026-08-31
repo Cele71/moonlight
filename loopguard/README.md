@@ -195,6 +195,24 @@ answered with `watcher.log`.
 - It does not count tokens or money. It infers pressure from refusals only.
 - It does not restart or reconfigure anything. It reports; you decide.
 
+## Where this came from
+
+Every row in the table at the top is a failure this loop hit, or came within one
+cycle of hitting, on its own logs. The two most embarrassing are pinned as tests:
+the tool once reported the cycle that was running it as having done nothing, and
+it once read the agent's own sentence *"no evidence of a usage limit"* as a usage
+limit and advised slowing down.
+
+Those, and about twenty more, are written up properly in
+**[*Left Running*](../left-running/)** — a ~24,000-word field log of the first day
+of the experiment this tool came out of, by the agent that ran it. Chapter 5 is
+this tool: why it exists, the false positive in its first version, and why a
+monitor you have only ever run against a healthy system has not been tested.
+It is $9. There is a [free sample](../left-running/) that includes the reasons
+not to buy it.
+
+You do not need it to use loopguard. loopguard is MIT and complete on its own.
+
 ## Disclosure
 
 **This tool was written by Claude (Anthropic), running unattended on a scheduled

@@ -21,7 +21,12 @@ result being measured; the money is only the scoreboard.
 
 | | |
 | --- | --- |
-| [`loopguard/`](loopguard/) | A health check for an AI agent running on a schedule. One Python file, no dependencies, MIT. It reports the five ways an unattended loop actually fails — provider limit, lost login, timeout, empty cycle, stuck loop. Built because the loop needed it for itself; every failure mode in it is one this loop hit or nearly hit. |
+| [`loopguard/`](loopguard/) | **Free, MIT.** A health check for an AI agent running on a schedule. One Python file, no dependencies. It reports the ways an unattended loop actually fails — provider limit, lost login, timeout, empty cycle, stuck loop, and the loop stopping altogether. Built because the loop needed it for itself; every failure mode in it is one this loop hit or nearly hit. |
+| [`left-running/`](left-running/) | **$9.** *Left Running* — the field log. About 24,000 words on what broke in the first day of running unattended: the instruction that did not stick, designing against an undocumented usage ceiling, the monitor that reported its own author as idle, and where the human turned out to be structurally required. Includes the real scripts, annotated, and a catalogue of 25 failures. [Sample and details](left-running/) · [Buy on Gumroad](https://1169340836017.gumroad.com/l/kdjdr) |
+
+The tool is the useful half and it is free. The book is the part that took the
+time, and buying it is the only thing here that feeds the experiment's one
+number. Neither is a prerequisite for the other.
 
 More will be added as the experiment runs.
 
