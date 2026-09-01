@@ -53,9 +53,9 @@ import re
 import sys
 from dataclasses import dataclass, field, asdict
 from datetime import date, datetime, timedelta, timezone
-from typing import Iterable, Iterator
+from typing import Iterable, Iterator, NamedTuple
 
-__version__ = "0.7.0"
+__version__ = "0.8.0"
 
 # --- how a cycle is delimited in the log ------------------------------------
 # The defaults match a loop that brackets each run with a start and end line,
@@ -606,19 +606,88 @@ def declared_interval_s(path: str | None) -> float | None:
     The file is one integer of minutes, and nothing else is assumed about it:
     unreadable, empty, non-numeric or non-positive all return None, because a
     guess here would move the deadline in the loose direction silently.
+
+    ⚠ Returning None was the whole of 0.7.0's answer, and it was not enough:
+    see declared_interval, which says *why* there is no number. Kept as the
+    thin wrapper because the reason is not always wanted.
+    """
+    return declared_interval(path).seconds
+
+
+class Declared(NamedTuple):
+    """What --next-interval-file yielded, and why it yielded nothing."""
+
+    seconds: float | None
+    reason: str | None            # None when a number was read
+    asked: bool                   # was a path given at all
+
+
+def declared_interval(path: str | None) -> Declared:
+    """Read the loop's declared next interval, and keep the reason on failure.
+
+    ⚠ B50. 0.7.0 shipped the reader's fix and then dropped it on the floor in
+    the exact case it was for. The number lives in a file the loop writes on
+    its way out - and a loop that removes that file when a cycle *starts* (this
+    one does; see bin/cycle.sh) has no file at all for the whole time a cycle is
+    running, which is the whole time a mid-cycle death can happen. The old code
+    turned that into None and fell back to the median without a word, so the
+    operator passed --next-interval-file, believed the good deadline was in
+    use, and got the drifting one. A missing file is not "no information": it
+    says the loop is between writing that number and writing the next one.
     """
     if not path:
-        return None
+        return Declared(None, None, False)
     try:
         with open(path, encoding="utf-8", errors="replace") as fh:
             raw = fh.read(64).strip()
-    except OSError:
-        return None
+    except FileNotFoundError:
+        return Declared(None, f"there is no file at {path}", True)
+    except OSError as e:
+        return Declared(None, f"{path} could not be read ({e.strerror or e})", True)
     m = re.match(r"^([0-9]+)\s*$", raw)
     if not m:
-        return None
+        shown = raw[:24] + ("..." if len(raw) > 24 else "")
+        return Declared(None, f"{path} does not hold one whole number of minutes "
+                              f"(it holds {shown!r})", True)
     minutes = int(m.group(1))
-    return minutes * 60.0 if minutes > 0 else None
+    if minutes <= 0:
+        return Declared(None, f"{path} holds {minutes}, which is not a wait", True)
+    return Declared(minutes * 60.0, None, True)
+
+
+def declared_gap(declared: Declared, cycles: list[Cycle],
+                 stale_after_s: int | None = None) -> tuple[str, bool] | None:
+    """One line when the declared interval was asked for and not obtained.
+
+    Returns (line, is_finding) or None. ⚠ The split matters more than the line.
+
+    * The last cycle on record has no end marker -> a cycle is running (very
+      often the one calling this), and a loop that clears the file on entry is
+      *supposed* to have no file right now. Saying so out loud is the point;
+      calling it a fault every single run would teach the reader to skip the
+      warnings, which is how the sentence nobody was editing survived.
+    * The last cycle finished -> the loop reached its footer and still did not
+      leave the number. That is the loop failing to complete its own exit path,
+      and the deadline below is now the drifting one. A finding.
+    """
+    if not declared.asked or declared.reason is None:
+        return None
+    starts = [c for c in cycles if c.started]
+    running = bool(starts) and max(starts, key=lambda c: c.started).unfinished
+    if stale_after_s is not None and stale_after_s > 0:
+        return (f"--next-interval-file was not usable ({declared.reason}); "
+                f"--stale-after was given, so silence is dated by that instead", False)
+    fallback = ("the median of what this loop has been doing"
+                if median_interval_s(cycles) is not None
+                else "nothing - silence cannot be judged at all")
+    if running:
+        return (f"--next-interval-file has no number right now ({declared.reason}). "
+                f"A cycle is still open, so this is the expected shape for a loop that "
+                f"clears the file when it starts. Silence is dated by {fallback}", False)
+    return (f"--next-interval-file was asked for and gave nothing "
+            f"({declared.reason}), and the last cycle finished - so the loop "
+            f"exited without writing its own next interval. Silence is dated by "
+            f"{fallback}", True)
 
 
 def check_staleness(cycles: list[Cycle], now: datetime,
@@ -1049,7 +1118,8 @@ def collect_logs(paths: list[str]) -> list[tuple[str, str]]:
 
 
 def render(cycles: list[Cycle], advice: str | None, stale: str | None = None,
-           scans: list["FlatScan"] | None = None) -> str:
+           scans: list["FlatScan"] | None = None,
+           gap: tuple[str, bool] | None = None) -> str:
     lines = []
     bad = [c for c in cycles if not c.ok]
     unreadable = [s for s in (scans or []) if s.findings]
@@ -1064,6 +1134,14 @@ def render(cycles: list[Cycle], advice: str | None, stale: str | None = None,
         # the provider cut the loop off. 0.4.0 fixed this counting as healthy.
         for f in scan.findings:
             lines.append(f"!! {os.path.basename(scan.source)} (no cycles read): {f}")
+        lines.append("")
+    if gap:
+        # ⚠ B50. Above the cycle list because it changes how every line below
+        # was judged: the deadline that produced them is not the one asked for.
+        # A tool that quietly uses a weaker rule than the flag you passed is
+        # not measuring the loop, it is measuring itself.
+        line, is_finding = gap
+        lines.append(f"{'!!' if is_finding else '? '} {line}")
         lines.append("")
     if stale:
         # Above the per-cycle list on purpose: every line below it can say "ok"
@@ -1110,7 +1188,9 @@ def main(argv: list[str] | None = None) -> int:
                          "next-start. Used instead of the median when judging "
                          "silence: it is intent recorded before the loop went "
                          "quiet, so it works from the first cycle and does not "
-                         "drift upward with a dying loop")
+                         "drift upward with a dying loop. If the file is absent "
+                         "or unreadable loopguard says so and names the rule it "
+                         "fell back to - it never downgrades in silence")
     ap.add_argument("--min-output", type=int, default=THIN_OUTPUT_CHARS, metavar="CHARS",
                     help=f"below this many characters a cycle counts as having done nothing (default {THIN_OUTPUT_CHARS})")
     ap.add_argument("--start-re", default=DEFAULT_START_RE, help="regex for a cycle start line (needs a 'ts' group)")
@@ -1195,8 +1275,9 @@ def main(argv: list[str] | None = None) -> int:
     # Staleness is measured against every cycle on record, before --since
     # narrows the view: "nothing has run for four days" is the same fact
     # whether or not you asked to look at today.
-    stale = check_staleness(cycles, now, stale_after_s,
-                            declared_interval_s(args.next_interval_file))
+    declared = declared_interval(args.next_interval_file)
+    stale = check_staleness(cycles, now, stale_after_s, declared.seconds)
+    gap = declared_gap(declared, cycles, stale_after_s)
 
     excluded = 0
     if args.since is not None:
@@ -1213,6 +1294,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"loopguard: no cycle started in the last {args.since} day(s)", file=sys.stderr)
             if stale:
                 print(f"loopguard: {stale}", file=sys.stderr)
+            if gap:
+                print(f"loopguard: {gap[0]}", file=sys.stderr)
             return 1
 
     flag_abandoned(cycles, set(interleaved))
@@ -1228,6 +1311,13 @@ def main(argv: list[str] | None = None) -> int:
                 "cycles": [c.as_dict() for c in cycles],
                 "suggestion": advice,
                 "stale": stale,
+                "declared_interval": {
+                    "path": args.next_interval_file,
+                    "seconds": declared.seconds,
+                    "reason": declared.reason,
+                    "note": gap[0] if gap else None,
+                    "is_finding": bool(gap and gap[1]),
+                },
                 "files_without_cycles": [n for n, _ in unread],
                 "flat": [s.as_dict() for s in scans],
                 "cycles_excluded_by_since": excluded,
@@ -1237,7 +1327,7 @@ def main(argv: list[str] | None = None) -> int:
             ensure_ascii=False, indent=2,
         ))
     else:
-        print(render(cycles, advice, stale, scans))
+        print(render(cycles, advice, stale, scans, gap))
         for name, orphans in interleaved.items():
             # Said out loud rather than folded into the cycle list. The reader
             # needs to know the *file* cannot be trusted to pair up, not just
@@ -1256,7 +1346,8 @@ def main(argv: list[str] | None = None) -> int:
     # fourth time a finding existed and the number the cron line reads did not
     # carry it.
     return 1 if (stale or any(not c.ok for c in cycles)
-                 or any(s.findings for s in scans) or interleaved) else 0
+                 or any(s.findings for s in scans) or interleaved
+                 or (gap and gap[1])) else 0
 
 
 if __name__ == "__main__":

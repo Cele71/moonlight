@@ -1099,6 +1099,175 @@ class DeclaredNextInterval(unittest.TestCase):
         self.assertIn("may have stopped", out.getvalue())
 
 
+class ADowngradeThatSaysNothing(unittest.TestCase):
+    """B50 / 0.8.0. The reader's fix, dropped on the floor in its own case.
+
+    0.7.0 read --next-interval-file and returned None whenever there was no
+    number, and check_staleness then fell back to the median without printing a
+    word. That is fine only if the file is normally there.
+
+    ⚠ On the loop this tool was written for it is normally *not* there. The
+    supervisor's cycle script removes state/next_minutes when a cycle starts,
+    so the file is absent for the whole time a cycle runs - which is the whole
+    time a mid-cycle death can happen. Every self-check run from inside a cycle
+    passed the flag, believed the intent-based deadline was in use, and got the
+    drifting median. Nothing said so, in twenty-nine cycles.
+
+    So: never downgrade in silence, and split the two absences. A file missing
+    while a cycle is open is the designed shape of a loop that clears it on
+    entry. A file missing after the last cycle wrote its footer means the loop
+    did not finish its own exit path, and that is a finding.
+    """
+
+    def _file(self, contents=None):
+        d = tempfile.mkdtemp()
+        p = os.path.join(d, "next_minutes")
+        if contents is not None:
+            with open(p, "w", encoding="utf-8") as fh:
+                fh.write(contents)
+        return p
+
+    def _cycles(self, *, running: bool):
+        now = datetime.now()
+        cs = dated_cycles(now - timedelta(hours=4), now - timedelta(hours=3),
+                          now - timedelta(hours=2))
+        if running:
+            cs[-1].unfinished = True
+        else:
+            for c in cs:
+                c.ended = c.started + timedelta(minutes=5)
+        return cs
+
+    # --- the reason is kept, not thrown away -------------------------------
+
+    def test_a_read_number_carries_no_reason(self):
+        d = lg.declared_interval(self._file("25\n"))
+        self.assertEqual(d.seconds, 1500.0)
+        self.assertIsNone(d.reason)
+        self.assertTrue(d.asked)
+
+    def test_each_way_of_failing_names_itself(self):
+        missing = lg.declared_interval(self._file())
+        self.assertIsNone(missing.seconds)
+        self.assertIn("no file at", missing.reason)
+        junk = lg.declared_interval(self._file("soon\n"))
+        self.assertIn("does not hold one whole number", junk.reason)
+        self.assertIn("'soon'", junk.reason)
+        zero = lg.declared_interval(self._file("0"))
+        self.assertIn("not a wait", zero.reason)
+
+    def test_not_asking_is_not_a_failure(self):
+        d = lg.declared_interval(None)
+        self.assertFalse(d.asked)
+        self.assertIsNone(d.reason)
+        self.assertIsNone(lg.declared_gap(d, self._cycles(running=False)))
+
+    def test_the_old_thin_wrapper_still_answers_the_same(self):
+        # Kept so 0.7.0 callers do not change behaviour under them.
+        self.assertEqual(lg.declared_interval_s(self._file("30")), 1800.0)
+        self.assertIsNone(lg.declared_interval_s(self._file()))
+
+    # --- the split ---------------------------------------------------------
+
+    def test_absent_while_a_cycle_is_open_is_explained_not_blamed(self):
+        gap = lg.declared_gap(lg.declared_interval(self._file()),
+                              self._cycles(running=True))
+        self.assertIsNotNone(gap)
+        line, is_finding = gap
+        self.assertFalse(is_finding, "the designed shape must not be a fault")
+        self.assertIn("cycle is still open", line)
+        self.assertIn("median", line)
+
+    def test_absent_after_the_last_cycle_finished_is_a_finding(self):
+        gap = lg.declared_gap(lg.declared_interval(self._file()),
+                              self._cycles(running=False))
+        line, is_finding = gap
+        self.assertTrue(is_finding)
+        self.assertIn("exited without writing its own next interval", line)
+
+    def test_a_number_that_was_read_says_nothing_at_all(self):
+        self.assertIsNone(lg.declared_gap(lg.declared_interval(self._file("25")),
+                                          self._cycles(running=False)))
+
+    def test_an_explicit_stale_after_makes_the_miss_harmless(self):
+        gap = lg.declared_gap(lg.declared_interval(self._file()),
+                              self._cycles(running=False), stale_after_s=3600)
+        line, is_finding = gap
+        self.assertFalse(is_finding)
+        self.assertIn("--stale-after", line)
+
+    def test_when_there_is_no_median_either_the_line_says_so(self):
+        now = datetime.now()
+        two = dated_cycles(now - timedelta(hours=3), now - timedelta(hours=2))
+        for c in two:
+            c.ended = c.started + timedelta(minutes=5)
+        self.assertIsNone(lg.median_interval_s(two))
+        line, is_finding = lg.declared_gap(lg.declared_interval(self._file()), two)
+        self.assertTrue(is_finding)
+        self.assertIn("silence cannot be judged at all", line)
+
+    # --- the miss this was found by, end to end ----------------------------
+
+    def test_the_drifting_loop_is_caught_with_the_file_and_missed_without(self):
+        # The exact reproduction: intervals drifting upward, then a death.
+        # Median 45m -> limit 135m. Declared 25m -> limit 75m. Silence 100m.
+        t = datetime(2026, 9, 1, 0, 0, 0)
+        cs = []
+        for gap in (25, 25, 30, 45, 60, 90, 120):
+            cs.append(lg.Cycle(source="drift.log", started=t,
+                               ended=t + timedelta(minutes=10), rc=0, body="A" * 200))
+            t += timedelta(minutes=gap)
+        cs.append(lg.Cycle(source="drift.log", started=t, body="A" * 200))
+        now = t + timedelta(minutes=100)
+        self.assertEqual(lg.median_interval_s(cs), 45 * 60)
+        self.assertIsNotNone(lg.check_staleness(cs, now, None, 25 * 60.0))
+        self.assertIsNone(lg.check_staleness(cs, now, None, None),
+                          "the median must be the loose one here, or the case is gone")
+
+    def test_the_report_puts_the_downgrade_above_the_cycles(self):
+        cs = self._cycles(running=False)
+        gap = lg.declared_gap(lg.declared_interval(self._file()), cs)
+        out = lg.render(cs, None, None, None, gap)
+        head, _, rest = out.partition("[1] ")
+        self.assertIn("!!", head)
+        self.assertIn("exited without writing", head)
+        self.assertNotIn("exited without writing", rest)
+
+    def test_a_finding_reaches_the_exit_code_and_the_json(self):
+        d = tempfile.mkdtemp()
+        logp = os.path.join(d, "run.log")
+        with open(logp, "w", encoding="utf-8") as fh:
+            fh.write(log((ago(minutes=180), "A" * 300, 0),
+                         (ago(minutes=120), "B" * 300, 0),
+                         (ago(minutes=60), "C" * 300, 0)))
+        buf = io.StringIO()
+        with redirect_stdout(buf), redirect_stderr(io.StringIO()):
+            rc = lg.main([logp, "--json", "--next-interval-file",
+                          os.path.join(d, "absent")])
+        payload = json.loads(buf.getvalue())
+        self.assertEqual(rc, 1)
+        self.assertTrue(payload["declared_interval"]["is_finding"])
+        self.assertIn("no file at", payload["declared_interval"]["reason"])
+        self.assertIsNone(payload["declared_interval"]["seconds"])
+
+    def test_an_open_cycle_does_not_turn_the_exit_code_red(self):
+        # ⚠ The self-check runs from inside a cycle every time. If this were a
+        # fault the cron line would be red on every healthy run, and a warning
+        # that is always on is a warning nobody reads.
+        d = tempfile.mkdtemp()
+        logp = os.path.join(d, "run.log")
+        with open(logp, "w", encoding="utf-8") as fh:
+            fh.write(log((ago(minutes=180), "A" * 300, 0),
+                         (ago(minutes=120), "B" * 300, 0)))
+            fh.write(f"===== {ago(minutes=20)} JST サイクル開始 =====\n"
+                     + "C" * 300 + "\n")
+        buf = io.StringIO()
+        with redirect_stdout(buf), redirect_stderr(io.StringIO()):
+            rc = lg.main([logp, "--next-interval-file", os.path.join(d, "absent")])
+        self.assertEqual(rc, 0)
+        self.assertIn("cycle is still open", buf.getvalue())
+
+
 class AKilledLastCycleIsNotStillRunning(unittest.TestCase):
     """0.7.0, second half of the same report.
 

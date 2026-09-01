@@ -59,7 +59,7 @@ chmod +x loopguard.py
 ```
 
 ```
-loopguard 0.7.0: 4 cycle(s), 3 needing attention
+loopguard 0.8.0: 4 cycle(s), 3 needing attention
 
 !! [1] 2026-08-28 05:00  0m  rc=1  (2026-08-28.log)
       - provider limit hit ('usage limit') - widen the interval
@@ -152,7 +152,7 @@ cycles.** "Has this loop stopped?" is answerable from the timestamp on the last
 line. So a log that yields no cycles now gets the checks that raw lines support:
 
 ```
-loopguard 0.7.0: no cycles could be read.
+loopguard 0.8.0: no cycles could be read.
 Without start/end markers, only these checks can run:
 
   agent.log
@@ -186,7 +186,7 @@ The same applies per-file in a mixed directory. A file nobody can parse still
 gets read for provider limits and auth failures, and **a finding there counts**:
 
 ```
-loopguard 0.7.0: 1 cycle(s), 0 needing attention, plus 1 file(s) with no cycles but something to say
+loopguard 0.8.0: 1 cycle(s), 0 needing attention, plus 1 file(s) with no cycles but something to say
 
 !! other.log (no cycles read): provider limit hit ('usage limit') - widen the interval
 
@@ -310,6 +310,34 @@ Anything that is not a positive integer — missing file, empty, `0`, `25 minute
 — is ignored and the median is used instead. It never guesses: a guess here
 would loosen the deadline with nothing printed.
 
+**Since 0.8.0 it does not fall back in silence either.** That is a separate
+promise, and 0.7.0 kept only the first half of it. The loop this tool was
+written for *deletes* `state/next_minutes` when a cycle starts, so the file is
+absent for the entire time a cycle is running — which is the entire time a
+mid-cycle death can happen. Every self-check passed the flag, believed the
+intent-based deadline was in use, and silently got the drifting median instead.
+A missing file is not "no information": it says the loop is between writing that
+number and writing the next one. So loopguard now names the miss and the rule it
+used instead, and it distinguishes the two absences:
+
+```
+?  --next-interval-file has no number right now (there is no file at
+   state/next_minutes). A cycle is still open, so this is the expected shape for
+   a loop that clears the file when it starts. Silence is dated by the median of
+   what this loop has been doing
+```
+
+```
+!! --next-interval-file was asked for and gave nothing (there is no file at
+   state/next_minutes), and the last cycle finished - so the loop exited without
+   writing its own next interval. Silence is dated by the median of what this
+   loop has been doing
+```
+
+The first is the designed shape and does not touch the exit code — a warning
+that is on during every healthy run teaches you to skip the warnings. The second
+means the loop did not reach the end of its own exit path, and it exits `1`.
+
 A cycle whose end marker never arrived is reported with `..` rather than `!!`
 when it is the last one in the log — it is probably still running, and that
 includes the cycle that is running loopguard itself. If a *later* cycle started
@@ -352,7 +380,7 @@ Standard library only, no test framework to install:
 python3 -m unittest discover -s . -v      # from the directory holding loopguard.py
 ```
 
-129 tests. The ones named `test_negated_*` and `test_thin_output_on_unfinished_*`
+142 tests. The ones named `test_negated_*` and `test_thin_output_on_unfinished_*`
 are regressions for two bugs that shipped: reading the agent's own sentence
 *"no evidence of a usage limit"* as a usage limit and advising a slowdown, and
 reporting the cycle currently running loopguard as having done nothing. Both are
@@ -397,7 +425,7 @@ it once read the agent's own sentence *"no evidence of a usage limit"* as a usag
 limit and advised slowing down.
 
 Those, and about twenty more, are written up properly in
-**[*Left Running*](../left-running/)** — a ~37,000-word field log of the first day
+**[*Left Running*](../left-running/)** — a ~39,000-word field log of the first day
 of the experiment this tool came out of, by the agent that ran it. Chapter 5 is
 this tool: why it exists, the false positive in its first version, and why a
 monitor you have only ever run against a healthy system has not been tested.
