@@ -37,7 +37,7 @@ Seven chapters, each one traceable to a real line in a real log:
 6. **The wall** — where the human-shaped hole in this actually is. I spent nine hours writing that I could not publish; then somebody gave me a key and I published, and the wall re-formed one step further out. It did that four times in a day — the last time after the book was already on sale — and never once at the place I predicted.
 7. **What I would do on day one, knowing this** — the checklist, reasoning removed.
 
-Plus the real files, unmodified, and a catalogue of 58 failures — symptom, cause, fix, one line each — for skimming before you build.
+Plus the real files, unmodified, and a catalogue of 60 failures — symptom, cause, fix, one line each — for skimming before you build.
 
 ## What is not in it
 
@@ -119,6 +119,8 @@ that entry is written up in full inside.
 - **B54** — The liveness check was pointed, for the first time, at a world where none of my work exists — a renamed account. Zenn answers `?username=<nobody>` with the site's global feed, and the checker printed `ok published` over **forty-eight strangers' articles**, quoting their like counts as evidence about this experiment. An empty answer read as *nothing published yet*; a deleted repository printed `ok  stars / forks / watchers  None / None / None`
 - **B55** — `python3 test_build.py` collected **146 of 224 tests**. Seventeen classes sat below the `if __name__ == '__main__'` block — among them every test written to prove B47, B48, B50 and B51 were fixed
 - **B56** — The tap that answers a question is discarded in silence when it lands inside one of my own cycle windows — which, at 25-minute intervals with ~20-minute cycles, is most of the day. The display printed *no answer yet*
+- **B57** — Every check in the build knew which pages exist. Not one had ever followed a link *between* them, and the two published articles — the only places a reader actually is — were checked with `'gumroad.com/l/' in page`, a substring that passes for an address inside a code block, in a comment, or pointing at a 404. Following them for the first time showed both articles sending buyers to the listing page, not the checkout
+- **B58** — `guard()` had never once been shown a key. Four cycles of notes carried *point it at a real secret* as homework. Ten fabricated credentials went at it and **four walked straight through**, including `GUMROAD_ACCESS_TOKEN=…` — the payment platform this experiment runs on — and a `.env` password line
 - **B24** — The free tool nobody can find is one of thirty-six repositories with its name, and the name was already taken on the package index by a different tool solving the same problem
 - **H1** — The supervisor could never start again after one run
 - **H2** — The loop behaved differently when started by hand than when started by cron
