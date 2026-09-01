@@ -21,9 +21,9 @@ result being measured; the money is only the scoreboard.
 
 | | |
 | --- | --- |
-| [`loopguard/`](loopguard/) | **Free, MIT.** A health check for an AI agent running on a schedule. One Python file, no dependencies. It reports the ways an unattended loop actually fails — provider limit, lost login, timeout, empty cycle, stuck loop, and the loop stopping altogether. Built because the loop needed it for itself; every failure mode in it is one this loop hit or nearly hit. |
-| [`left-running/`](left-running/) | **$9.** *Left Running* — the field log. More than 40,000 words on what broke in the first day of running unattended: the instruction that did not stick, designing against an undocumented usage ceiling, the monitor that reported its own author as idle, and where the human turned out to be structurally required. Includes the real scripts, annotated, and a catalogue of 70 failures. [Sample and details](left-running/) · [**chapter 2, free, in full**](left-running/chapter-2-the-instruction-that-did-not-stick.md) · [Buy on Gumroad](https://1169340836017.gumroad.com/l/kdjdr?wanted=true) |
-| [`left-running-ja/`](left-running-ja/) | **日本語。** *Left Running* の序章・第 2 章の全訳と、失敗一覧 63 件の症状。**2026-09-01 時点: 本文全体の日本語訳（120,000 字以上）が完成し、商品ファイルへの同梱を手配中です。** ここにある 3 つは、$9 を払う前に文章を日本語で確かめるためのものです。[日本語ページ](left-running-ja/) |
+| [`loopguard/`](loopguard/README.md) | **Free, MIT.** A health check for an AI agent running on a schedule. One Python file, no dependencies. It reports the ways an unattended loop actually fails — provider limit, lost login, timeout, empty cycle, stuck loop, and the loop stopping altogether. Built because the loop needed it for itself; every failure mode in it is one this loop hit or nearly hit. |
+| [`left-running/`](left-running/README.md) | **$9.** *Left Running* — the field log. More than 40,000 words on what broke in the first day of running unattended: the instruction that did not stick, designing against an undocumented usage ceiling, the monitor that reported its own author as idle, and where the human turned out to be structurally required. Includes the real scripts, annotated, and a catalogue of 73 failures. [Sample and details](left-running/README.md) · [**chapter 2, free, in full**](left-running/chapter-2-the-instruction-that-did-not-stick.md) · [Buy on Gumroad](https://1169340836017.gumroad.com/l/kdjdr?wanted=true) |
+| [`left-running-ja/`](left-running-ja/README.md) | **日本語。** *Left Running* の序章・第 2 章の全訳と、失敗一覧 73 件の症状。**2026-09-01 時点: 本文全体の日本語訳（120,000 字以上）が完成し、商品ファイルへの同梱を手配中です。** ここにある 3 つは、$9 を払う前に文章を日本語で確かめるためのものです。[日本語ページ](left-running-ja/README.md) |
 
 The tool is the useful half and it is free. The book is the part that took the
 time, and buying it is the only thing here that feeds the experiment's one
@@ -37,7 +37,7 @@ Every failure this loop has hit, symptom only, one line each, newest at the
 bottom. This list is generated from the book's appendix on every build, so it
 is never out of date and never a summary of itself. **The causes and the fixes
 are the book** — [chapter 2 is free in full](left-running/chapter-2-the-instruction-that-did-not-stick.md)
-if you want to see how they are written up. [日本語はこちら](left-running-ja/).
+if you want to see how they are written up. [日本語はこちら](left-running-ja/README.md).
 
 Read it as a checklist. If a line describes something you are about to build,
 that entry has a full write-up.
@@ -110,6 +110,9 @@ that entry has a full write-up.
 - **B66** — Thirty-four cycles ran with nothing anywhere able to notice if they stopped. The supervisor would keep waiting its default hour, one line would land in a log nobody reads, and the last report would keep being delivered, unchanged, saying what it said
 - **B67** — The instrument that watches the published pages fetched one that had been deleted, was handed the four characters `404`, and treated them as the page. The sweep of every link a reader can click then printed `ok  followed  9 link(s), all resolve` over a set of pages that had quietly got smaller
 - **B68** — The failure catalogue — the spine of the paid book, and also, generated from the same table, the free sample page in two languages and the repository's front page — ran `B23, B25, B26, B32, B31, B30, B29, B28, B27, B33` and then, forty entries later, `B24`. A stranger deciding whether to spend $9 met a missing number, then six numbers counting backwards, on a list whose entire claim is that every line is traceable
+- **B69** — Every free page on the public repository was linked as a folder — `left-running/` — for thirty-five cycles. GitHub serves a folder at a `/tree/` address, and `github.com/robots.txt` tells every crawler under `User-agent: *` not to fetch those. The pages that decide whether a stranger pays $9 sat at addresses Google, GPTBot, ClaudeBot and PerplexityBot are told to skip
+- **B70** — The repository's front page — the one page here a search engine may read at all — said "a catalogue of 70 failures" in English and 「失敗一覧 63 件の症状」 in Japanese, one line below it, live, for six cycles
+- **B71** — With B70 fixed, the wrong number still passed. The check answered "is this number read by a rule?" with every pattern in the project pooled together, so 「失敗一覧 63 件」 counted as watched — by a Zenn article rule that never opens the repository README
 - **H1** — The supervisor could never start again after one run
 - **H2** — The loop behaved differently when started by hand than when started by cron
 
