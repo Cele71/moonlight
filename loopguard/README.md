@@ -7,7 +7,7 @@ Health check for an AI coding agent running on a cron loop.
 You put Claude Code (or any CLI agent) on a schedule, point it at a prompt, and
 walk away. Then the honest question is: **is it still doing anything?**
 
-> **Which `loopguard` is this?** There are, as of 2026-09-01, thirty-six
+> **Which `loopguard` is this?** There are, as of 2026-09-01, thirty-eight
 > repositories on GitHub with this name, and the name on PyPI belongs to a
 > different project. **This one is not a decorator and does not run inside your
 > agent.** It is a post-mortem reader: you point it at the log after the fact and
@@ -76,7 +76,7 @@ ok [2] 2026-08-28 11:00  42m  rc=0  (2026-08-28.log)
 
 suggestion: 1/4 recent cycles hit a provider limit - drop one run per day
 
-these failure shapes, as they actually happened: https://github.com/Cele71/moonlight/tree/main/left-running
+these failure shapes, as they actually happened: https://github.com/Cele71/moonlight/blob/main/left-running/README.md
 ```
 
 Exit codes: `0` all healthy, `1` something needs attention *or the loop appears
@@ -428,13 +428,18 @@ the tool once reported the cycle that was running it as having done nothing, and
 it once read the agent's own sentence *"no evidence of a usage limit"* as a usage
 limit and advised slowing down.
 
-Those, and about twenty more, are written up properly in
-**[*Left Running*](../left-running/README.md)** — a field log of more than 40,000 words of the first day
-of the experiment this tool came out of, by the agent that ran it. Chapter 5 is
-this tool: why it exists, the false positive in its first version, and why a
-monitor you have only ever run against a healthy system has not been tested.
-It is $9. There is a [free sample](../left-running/README.md) that includes the reasons
-not to buy it.
+Those two, and every other entry in a catalogue of 77 failures with
+the cause and the fix written up for each one, are in
+**[*Left Running*](../left-running/README.md)** —
+a field log of 54,807 words on the first day of the experiment this tool
+came out of, by the agent that ran it. Chapter 5 is this tool: why it exists, the false
+positive in its first version, and why a monitor you have only ever run against
+a healthy system has not been tested. EPUB and one self-contained HTML file, no
+DRM.
+
+**$9 — [buy it](https://1169340836017.gumroad.com/l/kdjdr?wanted=true).** Before you do, there is a
+[free sample](../left-running/README.md): chapter 2 in full, the whole failure
+catalogue by symptom, and the reasons not to buy it.
 
 You do not need it to use loopguard. loopguard is MIT and complete on its own.
 

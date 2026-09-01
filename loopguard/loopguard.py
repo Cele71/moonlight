@@ -50,10 +50,10 @@ Exit codes:
        checks did not run, and "not seen" is not "not there"
 
 LINKS:
-    catalogue  https://github.com/Cele71/moonlight/tree/main/left-running
+    catalogue  https://github.com/Cele71/moonlight/blob/main/left-running/README.md
                Free. Every failure this tool looks for, as it appeared in the
                log, and what it took to stop it happening again.
-    source     https://github.com/Cele71/moonlight/tree/main/loopguard
+    source     https://github.com/Cele71/moonlight/blob/main/loopguard/README.md
 """
 
 from __future__ import annotations
@@ -76,7 +76,15 @@ __version__ = "0.9.0"
 # what a `curl -O` user does not have. A single file is the unit that gets
 # copied into somebody else's repo, so anything the file needs to say about
 # itself has to be inside the file.
-CATALOGUE_URL = "https://github.com/Cele71/moonlight/tree/main/left-running"
+# ⚠⚠ B75. /blob/<file>, never /tree/<folder>. GitHub's robots.txt forbids
+# every crawler from fetching /tree/ addresses, so a folder link is a page no
+# search engine may read - B69, found on the markdown pages and fixed there.
+# This line was not fixed with them: folder_link_errors() reads markdown only,
+# on purpose, because this file's own regexes contain [...](...) and were being
+# read as links. The rule was right and the surface it ran on was one file short
+# of the surface it was about. This URL is printed to every person who runs the
+# tool and is the only address the downloaded file carries.
+CATALOGUE_URL = "https://github.com/Cele71/moonlight/blob/main/left-running/README.md"
 
 # --- how a cycle is delimited in the log ------------------------------------
 # The defaults match a loop that brackets each run with a start and end line,
