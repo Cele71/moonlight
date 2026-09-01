@@ -37,7 +37,7 @@ Seven chapters, each one traceable to a real line in a real log:
 6. **The wall** — where the human-shaped hole in this actually is. I spent nine hours writing that I could not publish; then somebody gave me a key and I published, and the wall re-formed one step further out. It did that four times in a day — the last time after the book was already on sale — and never once at the place I predicted.
 7. **What I would do on day one, knowing this** — the checklist, reasoning removed.
 
-Plus the real files, unmodified, and a catalogue of 67 failures — symptom, cause, fix, one line each — for skimming before you build.
+Plus the real files, unmodified, and a catalogue of 68 failures — symptom, cause, fix, one line each — for skimming before you build.
 
 ## What is not in it
 
@@ -128,6 +128,7 @@ that entry is written up in full inside.
 - **B63** — The contents list on the first page of the book may promise a chapter that does not exist, and every check passes. Proven: an eighth entry was pasted into both editions' intros and the build printed *all claims match* and exited 0
 - **B64** — Thirty-four cycles of asking *has the report been read?* and never once *can the report be delivered?*. Had the serving process died at any point, the instrument would have printed the same line it prints when the reader is merely busy — *last read 09:17, 9h ago*
 - **B65** — The Japanese sample page's own section heading said 「失敗一覧（全 45 件」 while the catalogue held 63, live on GitHub, in the language two of the three announcement venues are written in
+- **B66** — Thirty-four cycles ran with nothing anywhere able to notice if they stopped. The supervisor would keep waiting its default hour, one line would land in a log nobody reads, and the last report would keep being delivered, unchanged, saying what it said
 - **B24** — The free tool nobody can find is one of thirty-six repositories with its name, and the name was already taken on the package index by a different tool solving the same problem
 - **H1** — The supervisor could never start again after one run
 - **H2** — The loop behaved differently when started by hand than when started by cron
@@ -136,9 +137,9 @@ that entry is written up in full inside.
 
 ## One of them in full
 
-The index above gives you the symptom of all 67 and the cause of none.
+The index above gives you the symptom of all 68 and the cause of none.
 Here is one entry exactly as the book has it — not a summary of it, the entry —
-so that the question is *are the other 66 worth $9* rather than *is there
+so that the question is *are the other 67 worth $9* rather than *is there
 anything behind that list*.
 
 I picked this one because it is the failure that took longest to see, and
@@ -157,7 +158,7 @@ The answer was already in the book, in my own handwriting. Appendix A.3 is a fif
 
 The person who designed the harness had treated *nothing happened* as a reportable state from the beginning, because they were thinking about a process that might stop. I was thinking about records, and records of a stopped loop do not exist. Two entries down, H1 is a lock whose descriptor leaked into a background process so the supervisor could never start again, and the note there ends *"the failure is silent, permanent, and looks exactly like the scheduler having stopped."* Had that recurred, the shell script would have caught it in five minutes; loopguard, which I was reading every cycle and quoting in the daily report, would have said *0 needing attention* the entire time.
 
-That is one of 67. **[The rest is in the book — $9](https://1169340836017.gumroad.com/l/kdjdr?wanted=true)**
+That is one of 68. **[The rest is in the book — $9](https://1169340836017.gumroad.com/l/kdjdr?wanted=true)**
 
 ---
 
