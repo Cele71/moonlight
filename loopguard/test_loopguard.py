@@ -1014,3 +1014,128 @@ class UnmatchedEndMarkerTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class DeclaredNextInterval(unittest.TestCase):
+    """0.7.0. Reported by a reader of the article, against 0.3.0, and correct.
+
+    Every deadline in check_staleness was derived from history, and history is
+    what a dying loop stops producing. Two concrete holes:
+
+      * a loop whose interval drifts upward on the way to dying carries a
+        median that grew with it, so the threshold is loosest exactly when it
+        matters most;
+      * a loop that died on cycle two has no median at all, so this check -
+        written to stop "no information" printing as "no problem" - was doing
+        precisely that.
+
+    A loop that picks its own cadence writes the next interval down before it
+    exits. That number is intent recorded *before* the silence.
+    """
+
+    def _file(self, contents):
+        d = tempfile.mkdtemp()
+        p = os.path.join(d, "next_minutes")
+        with open(p, "w", encoding="utf-8") as fh:
+            fh.write(contents)
+        return p
+
+    def test_a_plain_integer_of_minutes_is_read(self):
+        self.assertEqual(lg.declared_interval_s(self._file("25\n")), 1500.0)
+        self.assertEqual(lg.declared_interval_s(self._file(" 90 ")), 5400.0)
+
+    def test_anything_not_a_positive_integer_is_ignored(self):
+        # ⚠ None, never a guess. A guess here moves the deadline in the loose
+        # direction with nothing printed - the shape of every bug in this file.
+        for junk in ("", "  ", "0", "-5", "25 minutes", "twenty", "25\n30\n"):
+            self.assertIsNone(lg.declared_interval_s(self._file(junk)),
+                              f"parsed {junk!r} as an interval")
+        self.assertIsNone(lg.declared_interval_s("/no/such/file"))
+        self.assertIsNone(lg.declared_interval_s(None))
+
+    def test_a_loop_that_died_on_its_second_cycle_is_now_reported(self):
+        # The hole. Two starts is below MIN_STARTS_FOR_INTERVAL, so there is no
+        # median and 0.3.0 returned None - silence, forever, on a dead loop.
+        now = datetime.now()
+        cycles = dated_cycles(now - timedelta(hours=9), now - timedelta(hours=8))
+        self.assertIsNone(lg.median_interval_s(cycles))
+        self.assertIsNone(lg.check_staleness(cycles, now))     # 0.6.0 behaviour
+        msg = lg.check_staleness(cycles, now, declared_s=25 * 60)
+        self.assertIsNotNone(msg)
+        self.assertIn("may have stopped", msg)
+        self.assertIn("declared its next start", msg)
+
+    def test_a_drifting_interval_no_longer_loosens_its_own_deadline(self):
+        # Gaps of 20, 40, 80 then 160 minutes - failure 3 talking the loop into
+        # sleeping longer each time - and then silence for 90 minutes. The
+        # median has grown to an hour, so 0.6.0 waits three hours before
+        # complaining about a loop that said it would be back in twenty.
+        now = datetime.now()
+        ends = (390, 370, 330, 250, 90)     # minutes ago, oldest first
+        cycles = dated_cycles(*[now - timedelta(minutes=m) for m in ends])
+        self.assertEqual(lg.median_interval_s(cycles), 60 * 60)
+        self.assertIsNone(lg.check_staleness(cycles, now))      # 0.6.0 behaviour
+        self.assertIsNotNone(lg.check_staleness(cycles, now, declared_s=20 * 60))
+
+    def test_an_explicit_stale_after_still_wins(self):
+        # Precedence: what the operator typed beats what the loop claimed.
+        now = datetime.now()
+        cycles = dated_cycles(now - timedelta(hours=2))
+        msg = lg.check_staleness(cycles, now, stale_after_s=3600,
+                                 declared_s=24 * 3600)
+        self.assertIsNotNone(msg)
+        self.assertIn("--stale-after", msg)
+
+    def test_a_healthy_loop_with_a_declared_interval_says_nothing(self):
+        # The other direction. A check that cannot pass gets switched off.
+        now = datetime.now()
+        cycles = dated_cycles(now - timedelta(minutes=40), now - timedelta(minutes=10))
+        self.assertIsNone(lg.check_staleness(cycles, now, declared_s=25 * 60))
+
+    def test_the_cli_accepts_the_file(self):
+        d = tempfile.mkdtemp()
+        p = os.path.join(d, "run.log")
+        with open(p, "w", encoding="utf-8") as fh:
+            fh.write(log((ago(days=1), "A" * 300, 0), (ago(minutes=1400), "A" * 300, 0)))
+        out = io.StringIO()
+        with redirect_stdout(out):
+            lg.main([p, "--next-interval-file", self._file("25")])
+        self.assertIn("may have stopped", out.getvalue())
+
+
+class AKilledLastCycleIsNotStillRunning(unittest.TestCase):
+    """0.7.0, second half of the same report.
+
+    The last unfinished cycle in a log is exempt from every complaint, because
+    it is usually the run calling loopguard. flag_abandoned lifts that only
+    when a later cycle overtook it - which never happens if the loop died
+    there. So a run killed by a watchdog read as in-progress forever. When the
+    caller has said what the per-cycle ceiling is, that is enough to know.
+    """
+
+    def _unfinished(self, minutes_ago):
+        started = datetime.now() - timedelta(minutes=minutes_ago)
+        c = cycles_of(log((started.strftime("%Y-%m-%d %H:%M:%S"), "A" * 300, None)))[0]
+        return c
+
+    def test_an_unfinished_cycle_past_the_ceiling_is_called_killed(self):
+        c = self._unfinished(minutes_ago=400)
+        lg.judge(c, timeout_s=3 * 3600, now=datetime.now())
+        self.assertTrue(c.problems, "a cycle killed six hours ago read as healthy")
+        self.assertIn("it was killed, not still running", " ".join(c.problems))
+        self.assertFalse(c.ok)
+
+    def test_a_cycle_still_inside_the_ceiling_is_left_alone(self):
+        # ⚠ The direction that matters more: this is usually the very run
+        # calling loopguard, and complaining about it every single time is how
+        # a check gets ignored.
+        c = self._unfinished(minutes_ago=20)
+        lg.judge(c, timeout_s=3 * 3600, now=datetime.now())
+        self.assertEqual(c.problems, [])
+
+    def test_without_a_ceiling_nothing_is_claimed(self):
+        # No --timeout means nobody outside the run owns the clock, and
+        # guessing one would be inventing the fact.
+        c = self._unfinished(minutes_ago=4000)
+        lg.judge(c, timeout_s=None, now=datetime.now())
+        self.assertEqual(c.problems, [])

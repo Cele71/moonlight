@@ -59,7 +59,7 @@ chmod +x loopguard.py
 ```
 
 ```
-loopguard 0.6.0: 4 cycle(s), 3 needing attention
+loopguard 0.7.0: 4 cycle(s), 3 needing attention
 
 !! [1] 2026-08-28 05:00  0m  rc=1  (2026-08-28.log)
       - provider limit hit ('usage limit') - widen the interval
@@ -152,7 +152,7 @@ cycles.** "Has this loop stopped?" is answerable from the timestamp on the last
 line. So a log that yields no cycles now gets the checks that raw lines support:
 
 ```
-loopguard 0.6.0: no cycles could be read.
+loopguard 0.7.0: no cycles could be read.
 Without start/end markers, only these checks can run:
 
   agent.log
@@ -186,7 +186,7 @@ The same applies per-file in a mixed directory. A file nobody can parse still
 gets read for provider limits and auth failures, and **a finding there counts**:
 
 ```
-loopguard 0.6.0: 1 cycle(s), 0 needing attention, plus 1 file(s) with no cycles but something to say
+loopguard 0.7.0: 1 cycle(s), 0 needing attention, plus 1 file(s) with no cycles but something to say
 
 !! other.log (no cycles read): provider limit hit ('usage limit') - widen the interval
 
@@ -280,12 +280,49 @@ Anything else needs a `--start-re` with a `ts` group matching your format.
   default is three times the loop's own median interval, never less than an hour,
   and it needs at least three starts before it will guess at all. `0` turns the
   check off, which is what you want when reading an archived log on purpose.
+- `--next-interval-file PATH` — a file holding one integer: the loop's own
+  declared minutes until its next start. Used instead of the median.
+
+### Why `--next-interval-file` exists
+
+Reported by a reader of the write-up, against 0.6.0, and correct. Every other
+deadline here is derived from history, and history is the thing a dying loop
+stops producing:
+
+- a loop whose interval drifts *upward* on the way to dying — which is exactly
+  what a "give yourself more time" suggestion talks it into — carries a median
+  that grew along with the run-up, so the threshold is loosest at the moment it
+  matters most;
+- a loop that died on its second cycle has no median at all, and this check,
+  which exists to stop "no information" printing as "no problem", was doing
+  precisely that.
+
+If your loop chooses its own cadence, it almost certainly writes the next
+interval down before it exits. That number is intent recorded *before* the
+silence. It dates the deadline without averaging anything, and it is there from
+the first cycle:
+
+```sh
+./loopguard.py logs/ --next-interval-file state/next_minutes --timeout 10800
+```
+
+Anything that is not a positive integer — missing file, empty, `0`, `25 minutes`
+— is ignored and the median is used instead. It never guesses: a guess here
+would loosen the deadline with nothing printed.
 
 A cycle whose end marker never arrived is reported with `..` rather than `!!`
 when it is the last one in the log — it is probably still running, and that
 includes the cycle that is running loopguard itself. If a *later* cycle started
 after it, it was not still running: it was killed without writing its footer,
 and that is a `!!`.
+
+**And if the loop died there, no later cycle will ever arrive.** The same
+report named this end of it: a run killed by a watchdog leaves a start marker
+and no end marker, and reads as in-progress forever unless something outside
+the run owns the clock. Since 0.7.0, if you pass `--timeout`, that is enough —
+a cycle that opened longer ago than the ceiling cannot still be inside it, and
+is reported as killed rather than running. Without `--timeout`, nothing is
+claimed, because nothing outside the run knows.
 
 **Unless two loops share the file.** `start A, start B, end A, end B` is the
 healthy shape of a pair of loops appending to one log, and read left to right it
@@ -315,7 +352,7 @@ Standard library only, no test framework to install:
 python3 -m unittest discover -s . -v      # from the directory holding loopguard.py
 ```
 
-119 tests. The ones named `test_negated_*` and `test_thin_output_on_unfinished_*`
+129 tests. The ones named `test_negated_*` and `test_thin_output_on_unfinished_*`
 are regressions for two bugs that shipped: reading the agent's own sentence
 *"no evidence of a usage limit"* as a usage limit and advising a slowdown, and
 reporting the cycle currently running loopguard as having done nothing. Both are

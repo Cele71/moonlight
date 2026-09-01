@@ -55,7 +55,7 @@ from dataclasses import dataclass, field, asdict
 from datetime import date, datetime, timedelta, timezone
 from typing import Iterable, Iterator
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"
 
 # --- how a cycle is delimited in the log ------------------------------------
 # The defaults match a loop that brackets each run with a start and end line,
@@ -500,9 +500,28 @@ def _first_match(res: list[re.Pattern], text: str) -> tuple[str | None, int, boo
     return None, skipped, False
 
 
-def judge(cycle: Cycle, timeout_s: int | None, min_output: int = THIN_OUTPUT_CHARS) -> None:
+def judge(cycle: Cycle, timeout_s: int | None, min_output: int = THIN_OUTPUT_CHARS,
+          now: datetime | None = None) -> None:
     """Fill in cycle.problems / cycle.notes. Ordered most severe first."""
     body = cycle.body
+
+    # ⚠ The last unfinished cycle in a log is normally the one running right
+    # now, so it is exempt from every complaint below. The same reader who
+    # found the median problem pointed out the other end of that exemption: a
+    # run killed by a watchdog leaves a start marker and no end marker, and
+    # reads as in-progress *forever* unless something outside the run owns the
+    # clock. flag_abandoned owns it only when a later cycle overtook this one -
+    # which never happens if the loop died here. So when the caller has told us
+    # the per-cycle ceiling, use it: a cycle that opened longer ago than the
+    # ceiling cannot still be inside it.
+    if (cycle.unfinished and not cycle.abandoned and timeout_s
+            and now is not None and cycle.started is not None):
+        age = (now - cycle.started).total_seconds()
+        if age > timeout_s:
+            cycle.abandoned = True
+            cycle.problems.append(
+                f"started {_dur(age)} ago and never finished, past the "
+                f"{_dur(timeout_s)} limit - it was killed, not still running")
 
     hit, skipped, quoted = _first_match(AUTH_RES, body)
     if hit and quoted:
@@ -565,8 +584,46 @@ def median_interval_s(cycles: list[Cycle]) -> float | None:
     return gaps[mid] if len(gaps) % 2 else (gaps[mid - 1] + gaps[mid]) / 2
 
 
+def declared_interval_s(path: str | None) -> float | None:
+    """The loop's own statement of when it means to wake next, in seconds.
+
+    ⚠ Reported by a reader of the published article, and correct. Everything
+    else here derives the deadline from history, and history is exactly what a
+    dying loop stops producing:
+
+      * a loop whose interval was drifting upward before it stopped carries a
+        median that grew right along with the run-up to its death, so the
+        threshold is loosest at the moment it matters most;
+      * a loop that died on its second cycle has no median at all, and this
+        check - written to stop "no information" printing as "no problem" -
+        was doing exactly that.
+
+    A loop that decides its own cadence usually writes that decision down
+    somewhere before it exits. That number is *intent recorded before the
+    silence*: it dates the deadline without averaging anything, and it exists
+    from the very first cycle. Point --next-interval-file at the file.
+
+    The file is one integer of minutes, and nothing else is assumed about it:
+    unreadable, empty, non-numeric or non-positive all return None, because a
+    guess here would move the deadline in the loose direction silently.
+    """
+    if not path:
+        return None
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            raw = fh.read(64).strip()
+    except OSError:
+        return None
+    m = re.match(r"^([0-9]+)\s*$", raw)
+    if not m:
+        return None
+    minutes = int(m.group(1))
+    return minutes * 60.0 if minutes > 0 else None
+
+
 def check_staleness(cycles: list[Cycle], now: datetime,
-                    stale_after_s: int | None = None) -> str | None:
+                    stale_after_s: int | None = None,
+                    declared_s: float | None = None) -> str | None:
     """One line if the loop looks stopped, else None.
 
     This is the only check that judges something the log does not contain.
@@ -574,6 +631,11 @@ def check_staleness(cycles: list[Cycle], now: datetime,
     week: the last run to happen wrote a clean footer and then nothing ever
     wrote again. Reporting "0 needing attention" there is the tool failing at
     its one job, so the gap between the last start and now is a finding.
+
+    Three ways to date the deadline, most trustworthy first: an explicit
+    --stale-after, the loop's own declared next interval, and finally the
+    median of what it has been doing. The median is last on purpose - see
+    declared_interval_s.
     """
     starts = [c.started for c in cycles if c.started]
     if not starts:
@@ -583,7 +645,11 @@ def check_staleness(cycles: list[Cycle], now: datetime,
     if silence < 0:
         return None  # log is ahead of the clock; not something to guess about
 
-    if stale_after_s is None:
+    if stale_after_s is None and declared_s is not None:
+        limit = max(declared_s * STALE_MULTIPLIER, MIN_STALE_S)
+        because = (f"it declared its next start {_dur(declared_s)} away "
+                   f"before going quiet")
+    elif stale_after_s is None:
         median = median_interval_s(cycles)
         if median is None:
             return None  # no idea what normal is for this loop
@@ -1039,6 +1105,12 @@ def main(argv: list[str] | None = None) -> int:
                          f"at least {MIN_STALE_S // 60} min; 0 disables). Required "
                          "to judge silence in a log with no cycle markers, where "
                          "there is no median interval to derive it from")
+    ap.add_argument("--next-interval-file", metavar="PATH",
+                    help="a file holding the loop's own declared minutes-until-"
+                         "next-start. Used instead of the median when judging "
+                         "silence: it is intent recorded before the loop went "
+                         "quiet, so it works from the first cycle and does not "
+                         "drift upward with a dying loop")
     ap.add_argument("--min-output", type=int, default=THIN_OUTPUT_CHARS, metavar="CHARS",
                     help=f"below this many characters a cycle counts as having done nothing (default {THIN_OUTPUT_CHARS})")
     ap.add_argument("--start-re", default=DEFAULT_START_RE, help="regex for a cycle start line (needs a 'ts' group)")
@@ -1123,7 +1195,8 @@ def main(argv: list[str] | None = None) -> int:
     # Staleness is measured against every cycle on record, before --since
     # narrows the view: "nothing has run for four days" is the same fact
     # whether or not you asked to look at today.
-    stale = check_staleness(cycles, now, stale_after_s)
+    stale = check_staleness(cycles, now, stale_after_s,
+                            declared_interval_s(args.next_interval_file))
 
     excluded = 0
     if args.since is not None:
@@ -1144,7 +1217,7 @@ def main(argv: list[str] | None = None) -> int:
 
     flag_abandoned(cycles, set(interleaved))
     for c in cycles:
-        judge(c, args.timeout, args.min_output)
+        judge(c, args.timeout, args.min_output, now)
     flag_repeats(cycles)
     advice = suggest_interval(cycles, args.per_day)
 
