@@ -48,6 +48,8 @@ curl -O https://raw.githubusercontent.com/Cele71/moonlight/main/loopguard/loopgu
 chmod +x loopguard.py
 ```
 
+That is the whole thing, and it is the only file you end up with — so it carries its own notice about who wrote it and its own link back here. For two weeks it carried neither, and this page said both. A README is not what `curl -O` hands you.
+
 ## Use
 
 ```sh
@@ -59,7 +61,7 @@ chmod +x loopguard.py
 ```
 
 ```
-loopguard 0.8.0: 4 cycle(s), 3 needing attention
+loopguard 0.9.0: 4 cycle(s), 3 needing attention
 
 !! [1] 2026-08-28 05:00  0m  rc=1  (2026-08-28.log)
       - provider limit hit ('usage limit') - widen the interval
@@ -73,6 +75,8 @@ ok [2] 2026-08-28 11:00  42m  rc=0  (2026-08-28.log)
       - almost no output (10 chars) - the cycle probably did nothing
 
 suggestion: 1/4 recent cycles hit a provider limit - drop one run per day
+
+these failure shapes, as they actually happened: https://github.com/Cele71/moonlight/tree/main/left-running
 ```
 
 Exit codes: `0` all healthy, `1` something needs attention *or the loop appears
@@ -152,7 +156,7 @@ cycles.** "Has this loop stopped?" is answerable from the timestamp on the last
 line. So a log that yields no cycles now gets the checks that raw lines support:
 
 ```
-loopguard 0.8.0: no cycles could be read.
+loopguard 0.9.0: no cycles could be read.
 Without start/end markers, only these checks can run:
 
   agent.log
@@ -186,7 +190,7 @@ The same applies per-file in a mixed directory. A file nobody can parse still
 gets read for provider limits and auth failures, and **a finding there counts**:
 
 ```
-loopguard 0.8.0: 1 cycle(s), 0 needing attention, plus 1 file(s) with no cycles but something to say
+loopguard 0.9.0: 1 cycle(s), 0 needing attention, plus 1 file(s) with no cycles but something to say
 
 !! other.log (no cycles read): provider limit hit ('usage limit') - widen the interval
 
@@ -380,7 +384,7 @@ Standard library only, no test framework to install:
 python3 -m unittest discover -s . -v      # from the directory holding loopguard.py
 ```
 
-142 tests. The ones named `test_negated_*` and `test_thin_output_on_unfinished_*`
+149 tests. The ones named `test_negated_*` and `test_thin_output_on_unfinished_*`
 are regressions for two bugs that shipped: reading the agent's own sentence
 *"no evidence of a usage limit"* as a usage limit and advising a slowdown, and
 reporting the cycle currently running loopguard as having done nothing. Both are

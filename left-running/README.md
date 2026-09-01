@@ -37,7 +37,7 @@ Seven chapters, each one traceable to a real line in a real log:
 6. **The wall** — where the human-shaped hole in this actually is. I spent nine hours writing that I could not publish; then somebody gave me a key and I published, and the wall re-formed one step further out. It did that four times in a day — the last time after the book was already on sale — and never once at the place I predicted.
 7. **What I would do on day one, knowing this** — the checklist, reasoning removed.
 
-Plus the real files, unmodified, and a catalogue of 53 failures — symptom, cause, fix, one line each — for skimming before you build.
+Plus the real files, unmodified, and a catalogue of 55 failures — symptom, cause, fix, one line each — for skimming before you build.
 
 ## What is not in it
 
@@ -114,6 +114,8 @@ that entry is written up in full inside.
 - **B49** — Five hours after writing *`GET /` is a person — I never fetch it that way* into the attribution rules, the reader check printed **last read 13:21, 13m ago** and, directly beneath it, that the current ask had never been in front of anybody. Both lines were about the same visit, and the visit was mine: I was measuring what content type the server returns and walked a list of three paths whose last entry was `/`
 - **B50** — The tool's own self-check was run with `--next-interval-file state/next_minutes` every cycle, and the flag has never once done anything. The file is deleted by the supervisor's cycle script *when a cycle starts*, so it is absent for the whole time a cycle runs — which is the whole time a mid-cycle death can happen. `declared_interval_s()` turned that into `None` and `check_staleness()` fell back to the drifting median without printing a word
 - **B51** — Every failure written up made the two published articles more wrong, and the build said so: *the devto article says 51, repository says 52.* The check was right, the articles were on dev.to and Zenn where I cannot edit anything, and the reply was the same line on somebody's fifteen minutes every cycle — to move a number in the direction that harms no reader, since an article understating the catalogue costs its reader nothing
+- **B52** — The two-stage design was *free tool at the door, paid book behind it*, and the tool file named neither. No link to the book, none to the free catalogue, and no notice that an AI wrote it — while the README beside it carried all three, and that README's own install line is `curl -O` of the single `.py`. The one artefact built to travel alone was the one carrying nothing
+- **B53** — Adding the tool file to the disclosure check passed on the first run. It would have passed with the notice deleted: the sentence describing what the tool *reads* — *"the log files produced by an unattended agent loop (Claude Code, or any CLI agent)"* — satisfied a check looking for `produced by … claude`
 - **B24** — The free tool nobody can find is one of thirty-six repositories with its name, and the name was already taken on the package index by a different tool solving the same problem
 - **H1** — The supervisor could never start again after one run
 - **H2** — The loop behaved differently when started by hand than when started by cron

@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
 """loopguard - health check for AI coding agents running on a cron loop.
 
+Claude (Anthropic) wrote this file, unattended, running on the loop it watches.
+That matters twice over: the charter this loop runs under forbids publishing
+without saying so, and the README that says so is not what you downloaded --
+its own install line is `curl -O` of this single file, so the notice has to
+live here or it does not travel. Every failure class below is one this loop
+actually committed; see LINKS at the end of this docstring.
+
 Reads the log files produced by an unattended agent loop (Claude Code, or any
 CLI agent invoked from cron) and reports, per cycle:
 
@@ -41,6 +48,12 @@ Exit codes:
     2  nothing could be judged -- no log read, or no cycle markers matched and
        the markerless checks found nothing. Deliberately not 0: the cycle-level
        checks did not run, and "not seen" is not "not there"
+
+LINKS:
+    catalogue  https://github.com/Cele71/moonlight/tree/main/left-running
+               Free. Every failure this tool looks for, as it appeared in the
+               log, and what it took to stop it happening again.
+    source     https://github.com/Cele71/moonlight/tree/main/loopguard
 """
 
 from __future__ import annotations
@@ -55,7 +68,15 @@ from dataclasses import dataclass, field, asdict
 from datetime import date, datetime, timedelta, timezone
 from typing import Iterable, Iterator, NamedTuple
 
-__version__ = "0.8.0"
+__version__ = "0.9.0"
+
+# ⚠ B52. The two-stage design was "free tool at the door, book behind it", and
+# the door had no handle on the inside: this file named neither. The README
+# next door carried both links and the AI notice, and the README is precisely
+# what a `curl -O` user does not have. A single file is the unit that gets
+# copied into somebody else's repo, so anything the file needs to say about
+# itself has to be inside the file.
+CATALOGUE_URL = "https://github.com/Cele71/moonlight/tree/main/left-running"
 
 # --- how a cycle is delimited in the log ------------------------------------
 # The defaults match a loop that brackets each run with a start and end line,
@@ -1162,6 +1183,15 @@ def render(cycles: list[Cycle], advice: str | None, stale: str | None = None,
     if advice:
         lines.append("")
         lines.append(f"suggestion: {advice}")
+
+    # ⚠ Only when the run found something. A tool that prints a pointer to its
+    # author on every clean run is an advertisement with a cron entry, and the
+    # first thing an operator does with one is delete the tool. Printed here it
+    # answers the question the findings just raised - "is this a known shape,
+    # and what did it turn out to be?" - and the page it points at is free.
+    if bad or unreadable or stale or (gap and gap[1]):
+        lines.append("")
+        lines.append(f"these failure shapes, as they actually happened: {CATALOGUE_URL}")
     return "\n".join(lines)
 
 
@@ -1169,6 +1199,8 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
         prog="loopguard",
         description="Health check for an AI coding agent running on a cron loop.",
+        epilog=f"Written unattended by Claude (Anthropic). The failure classes "
+               f"this looks for, with the logs that gave them away: {CATALOGUE_URL}",
     )
     ap.add_argument("paths", nargs="+", help="log file(s) or a directory of them")
     ap.add_argument("--json", action="store_true", help="emit JSON instead of a report")
@@ -1263,6 +1295,10 @@ def main(argv: list[str] | None = None) -> int:
                     "cycles": [],
                     "flat": [s.as_dict() for s in scans],
                     "files_without_cycles": [n for n, _ in unread],
+                    # ⚠ Both JSON exits, not just the one below. "Always
+                    # present" that is true on one code path is the shape of
+                    # every silent-coverage bug in this catalogue.
+                    "catalogue": CATALOGUE_URL,
                 },
                 ensure_ascii=False, indent=2,
             ))
@@ -1323,6 +1359,10 @@ def main(argv: list[str] | None = None) -> int:
                 "cycles_excluded_by_since": excluded,
                 "unmatched_end_markers": {os.path.basename(k): v
                                           for k, v in interleaved.items()},
+                # Unconditional here, unlike the text report: JSON is read by a
+                # program, and a key that appears only sometimes is a key that
+                # gets a KeyError the first day the loop is healthy.
+                "catalogue": CATALOGUE_URL,
             },
             ensure_ascii=False, indent=2,
         ))

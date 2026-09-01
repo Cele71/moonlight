@@ -1306,6 +1306,74 @@ class AKilledLastCycleIsNotStillRunning(unittest.TestCase):
         self.assertEqual(c.problems, [])
 
 
+
+class CarriesItsOwnProvenance(unittest.TestCase):
+    """B52. The file is the unit that travels; the README does not go with it.
+
+    The install line in the README is `curl -O` of this single .py. Everything
+    the file has to say about who wrote it and where the rest of the work lives
+    therefore has to be inside the file, and has to survive being read on its
+    own.
+    """
+
+    def test_disclosure_is_in_the_file_not_only_the_readme(self):
+        head = lg.__doc__[:1500]
+        self.assertRegex(head, r"Claude \(Anthropic\) wrote this file")
+
+    def test_docstring_names_where_the_failures_are_written_up(self):
+        self.assertIn(lg.CATALOGUE_URL, lg.__doc__)
+
+    def test_help_carries_both(self):
+        out = io.StringIO()
+        with self.assertRaises(SystemExit), redirect_stdout(out):
+            lg.main(["--help"])
+        text = out.getvalue()
+        self.assertIn("Claude", text)
+        self.assertIn(lg.CATALOGUE_URL, text)
+
+    def test_report_points_at_the_catalogue_when_it_found_something(self):
+        c = lg.Cycle(source="a.log", started=datetime(2026, 9, 1, 1, 0))
+        c.problems.append("provider limit hit")
+        self.assertIn(lg.CATALOGUE_URL, lg.render([c], None))
+
+    def test_a_clean_report_is_silent_about_it(self):
+        """⚠ The discipline, not a detail. A pointer printed on every healthy
+        run is an advertisement on a cron schedule, and the operator's first
+        move is to delete the tool. Then the pointer costs the reach it was
+        added to buy."""
+        c = lg.Cycle(source="a.log", started=datetime(2026, 9, 1, 1, 0),
+                     ended=datetime(2026, 9, 1, 1, 5), rc=0)
+        self.assertNotIn(lg.CATALOGUE_URL, lg.render([c], None))
+
+    def test_json_carries_it_unconditionally(self):
+        """A key that appears only on unhealthy runs is a KeyError waiting for
+        the first healthy one."""
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "x.log")
+            with open(path, "w") as fh:
+                fh.write("=== サイクル開始 2026-09-01 01:00:00 ===\n"
+                         "work\n"
+                         "=== サイクル終了 2026-09-01 01:05:00 rc=0 ===\n")
+            out = io.StringIO()
+            with redirect_stdout(out), redirect_stderr(io.StringIO()):
+                lg.main([path, "--json"])
+            self.assertEqual(json.loads(out.getvalue())["catalogue"],
+                             lg.CATALOGUE_URL)
+
+    def test_json_carries_it_on_the_markerless_path_too(self):
+        """main() has two JSON exits. A key present on one of them is not a
+        key a caller can rely on."""
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "x.log")
+            with open(path, "w") as fh:
+                fh.write("2026-09-01 01:00:00 nothing this tool can bracket\n")
+            out = io.StringIO()
+            with redirect_stdout(out), redirect_stderr(io.StringIO()):
+                lg.main([path, "--json"])
+            self.assertEqual(json.loads(out.getvalue())["catalogue"],
+                             lg.CATALOGUE_URL)
+
+
 # ⚠⚠ B43. This block used to sit 126 lines above here, and everything below it
 # was defined after unittest.main() had already collected, run and exited. Ten
 # tests never ran - and not ten random ones: every test written to prove that
