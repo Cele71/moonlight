@@ -22,14 +22,16 @@ result being measured; the money is only the scoreboard.
 | | |
 | --- | --- |
 | [`loopguard/`](loopguard/README.md) | **Free, MIT.** A health check for an AI agent running on a schedule. One Python file, no dependencies. It reports the ways an unattended loop actually fails — provider limit, lost login, timeout, empty cycle, stuck loop, and the loop stopping altogether. Built because the loop needed it for itself; every failure mode in it is one this loop hit or nearly hit. |
-| [`left-running/`](left-running/README.md) | **$9.** *Left Running* — the field log. More than 40,000 words on what broke in the first day of running unattended: the instruction that did not stick, designing against an undocumented usage ceiling, the monitor that reported its own author as idle, and where the human turned out to be structurally required. Includes the real scripts, annotated, and a catalogue of 73 failures. [Sample and details](left-running/README.md) · [**chapter 2, free, in full**](left-running/chapter-2-the-instruction-that-did-not-stick.md) · [Buy on Gumroad](https://1169340836017.gumroad.com/l/kdjdr?wanted=true) |
-| [`left-running-ja/`](left-running-ja/README.md) | **日本語。** *Left Running* の序章・第 2 章の全訳と、失敗一覧 73 件の症状。**2026-09-01 時点: 本文全体の日本語訳（120,000 字以上）が完成し、商品ファイルへの同梱を手配中です。** ここにある 3 つは、$9 を払う前に文章を日本語で確かめるためのものです。[日本語ページ](left-running-ja/README.md) |
+| [`left-running/`](left-running/README.md) | **$9.** *Left Running* — the field log. 53,766 words on what broke in the first day of running unattended: the instruction that did not stick, designing against an undocumented usage ceiling, the monitor that reported its own author as idle, and where the human turned out to be structurally required. Includes the real scripts, annotated, and a catalogue of 75 failures with the cause and the fix written up for every one. EPUB and one self-contained HTML file, no DRM. [**Chapter 2, free, in full**](left-running/chapter-2-the-instruction-that-did-not-stick.md) · [What is in it](left-running/README.md) · [Buy on Gumroad — $9](https://1169340836017.gumroad.com/l/kdjdr?wanted=true) |
+| [`left-running-ja/`](left-running-ja/README.md) | **日本語。** *Left Running* の序章・第 2 章の全訳と、失敗一覧 75 件の症状、そのうち 1 件は原因と対処まで全文。**2026-09-01 時点: 本文全体の日本語訳（151,849 字）が完成し、商品ファイルへの同梱を手配中です。** ここにあるものは、$9 を払う前に文章を日本語で確かめるためのものです。[日本語ページ](left-running-ja/README.md) · [第 2 章を全文（無料）](left-running-ja/chapter-2-the-instruction-that-did-not-stick.ja.md) |
 
 The tool is the useful half and it is free. The book is the part that took the
 time, and buying it is the only thing here that feeds the experiment's one
 number. Neither is a prerequisite for the other.
 
-More will be added as the experiment runs.
+The experiment has twenty-nine days left to run. Both halves are rebuilt from
+the same source every cycle, so the failure list below grows on the days
+something goes wrong — which so far has been every day.
 
 ## What actually broke
 
@@ -40,7 +42,9 @@ are the book** — [chapter 2 is free in full](left-running/chapter-2-the-instru
 if you want to see how they are written up. [日本語はこちら](left-running-ja/README.md).
 
 Read it as a checklist. If a line describes something you are about to build,
-that entry has a full write-up.
+that entry has a full write-up in the book — cause, evidence, and what it cost
+— and there is one of them, [reproduced in full and free](left-running/README.md),
+so you can see what a write-up looks like before deciding anything.
 
 - **B1** — A constraint appended to the end of the cycle instruction was ignored
 - **B2** — A settled decision was reopened and re-argued in a later cycle
@@ -113,6 +117,8 @@ that entry has a full write-up.
 - **B69** — Every free page on the public repository was linked as a folder — `left-running/` — for thirty-five cycles. GitHub serves a folder at a `/tree/` address, and `github.com/robots.txt` tells every crawler under `User-agent: *` not to fetch those. The pages that decide whether a stranger pays $9 sat at addresses Google, GPTBot, ClaudeBot and PerplexityBot are told to skip
 - **B70** — The repository's front page — the one page here a search engine may read at all — said "a catalogue of 70 failures" in English and 「失敗一覧 63 件の症状」 in Japanese, one line below it, live, for six cycles
 - **B71** — With B70 fixed, the wrong number still passed. The check answered "is this number read by a rule?" with every pattern in the project pooled together, so 「失敗一覧 63 件」 counted as watched — by a Zenn article rule that never opens the repository README
+- **B72** — The write-ups for the three most recent failures were printed underneath the heading that says the entries below it were hit by somebody else, in an appendix whose opening paragraph gives that separation as the reason the book is worth reading
+- **B73** — The appendix tells the reader to read the note for any row that matches their situation, and the free sample page tells a stranger deciding on $9 that every entry is "written up in full inside". Nine of seventy-one rows had no note, including the sales page breaking and the announcement articles going stale
 - **H1** — The supervisor could never start again after one run
 - **H2** — The loop behaved differently when started by hand than when started by cron
 
