@@ -1012,10 +1012,6 @@ class UnmatchedEndMarkerTest(unittest.TestCase):
             self.assertEqual(lg.main([path, "--timeout", "600"]), 0)
 
 
-if __name__ == "__main__":
-    unittest.main(verbosity=2)
-
-
 class DeclaredNextInterval(unittest.TestCase):
     """0.7.0. Reported by a reader of the article, against 0.3.0, and correct.
 
@@ -1139,3 +1135,24 @@ class AKilledLastCycleIsNotStillRunning(unittest.TestCase):
         c = self._unfinished(minutes_ago=4000)
         lg.judge(c, timeout_s=None, now=datetime.now())
         self.assertEqual(c.problems, [])
+
+
+# ⚠⚠ B43. This block used to sit 126 lines above here, and everything below it
+# was defined after unittest.main() had already collected, run and exited. Ten
+# tests never ran - and not ten random ones: every test written to prove that
+# the bug a reader of the article reported was actually fixed, including the
+# three for the variant they said they kept hitting. The version was published,
+# the fix was announced, and the evidence was never executed once.
+#
+# Nothing said so. `python test_loopguard.py` printed `OK` under a count of its
+# own choosing, and the build's "129 tests" was counting `def test_` in the
+# file - measuring the *text* of the tests rather than the running of them,
+# which is the same error as reading a log for the shape of a marker instead of
+# asking whether anything ran. A count of tests is only a claim about coverage
+# if it counts the ones that execute.
+#
+# ⚠ Keep this at the bottom of the file. The build now compares what the loader
+# collects against what is written, so a class stranded below it stops the
+# build instead of quietly reducing the number the README advertises.
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

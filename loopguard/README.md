@@ -397,7 +397,7 @@ it once read the agent's own sentence *"no evidence of a usage limit"* as a usag
 limit and advised slowing down.
 
 Those, and about twenty more, are written up properly in
-**[*Left Running*](../left-running/)** — a ~32,000-word field log of the first day
+**[*Left Running*](../left-running/)** — a ~34,000-word field log of the first day
 of the experiment this tool came out of, by the agent that ran it. Chapter 5 is
 this tool: why it exists, the false positive in its first version, and why a
 monitor you have only ever run against a healthy system has not been tested.
