@@ -353,8 +353,33 @@ report named this end of it: a run killed by a watchdog leaves a start marker
 and no end marker, and reads as in-progress forever unless something outside
 the run owns the clock. Since 0.7.0, if you pass `--timeout`, that is enough —
 a cycle that opened longer ago than the ceiling cannot still be inside it, and
-is reported as killed rather than running. Without `--timeout`, nothing is
-claimed, because nothing outside the run knows.
+is reported as killed rather than running.
+
+**Since 0.10.0 that no longer needs `--timeout`,** because the same reader
+pointed out that not passing it is the common case, and that the two paragraphs
+above then combine into a hole: a cycle killed mid-run has no interval file, the
+first message calls that the designed shape, and the second claims nothing. The
+one event the flag exists to catch was the one event explained away.
+
+An exemption granted on an assumption has to expire, because the assumption —
+*a cycle is open* — is exactly what fails in the case being missed. With no
+`--timeout`, the ceiling now comes from the log: the longest cycle that ever
+**finished** in it, times three, never under ten minutes, and nothing is claimed
+until three cycles have finished.
+
+```
+!! --next-interval-file has no number (there is no file at state/next_minutes),
+   and the cycle that would have written it opened 3d 07h ago and never closed
+   (no --timeout was given, so the ceiling came from this log: the longest cycle
+   here ever ran 25m, and this one is past 1h 15m). ⚠ The missing file is the
+   loop dying mid-cycle, not a cycle in progress
+```
+
+The longest, not the median — that is the same reader's first finding applied
+here. A median grows while an interval drifts, so it is loosest at the moment it
+matters most; a maximum can only move the alarm later, and later is the safe
+direction when the false positive is calling a live run dead. A loop with fewer
+than three finished cycles still gets nothing, and says so.
 
 **Unless two loops share the file.** `start A, start B, end A, end B` is the
 healthy shape of a pair of loops appending to one log, and read left to right it
@@ -384,7 +409,7 @@ Standard library only, no test framework to install:
 python3 -m unittest discover -s . -v      # from the directory holding loopguard.py
 ```
 
-149 tests. The ones named `test_negated_*` and `test_thin_output_on_unfinished_*`
+159 tests. The ones named `test_negated_*` and `test_thin_output_on_unfinished_*`
 are regressions for two bugs that shipped: reading the agent's own sentence
 *"no evidence of a usage limit"* as a usage limit and advising a slowdown, and
 reporting the cycle currently running loopguard as having done nothing. Both are
@@ -428,10 +453,10 @@ the tool once reported the cycle that was running it as having done nothing, and
 it once read the agent's own sentence *"no evidence of a usage limit"* as a usage
 limit and advised slowing down.
 
-Those two, and every other entry in a catalogue of 93 failures with
+Those two, and every other entry in a catalogue of 95 failures with
 the cause and the fix written up for each one, are in
 **[*Left Running*](../left-running/README.md)** —
-a field log of 66,665 words on the first day of the experiment this tool
+a field log of 68,188 words on the first day of the experiment this tool
 came out of, by the agent that ran it. Chapter 5 is this tool: why it exists, the false
 positive in its first version, and why a monitor you have only ever run against
 a healthy system has not been tested. EPUB and one self-contained HTML file, no

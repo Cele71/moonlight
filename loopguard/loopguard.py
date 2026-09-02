@@ -68,7 +68,7 @@ from dataclasses import dataclass, field, asdict
 from datetime import date, datetime, timedelta, timezone
 from typing import Iterable, Iterator, NamedTuple
 
-__version__ = "0.9.0"
+__version__ = "0.10.0"
 
 # ⚠ B52. The two-stage design was "free tool at the door, book behind it", and
 # the door had no handle on the inside: this file named neither. The README
@@ -530,7 +530,7 @@ def _first_match(res: list[re.Pattern], text: str) -> tuple[str | None, int, boo
 
 
 def judge(cycle: Cycle, timeout_s: int | None, min_output: int = THIN_OUTPUT_CHARS,
-          now: datetime | None = None) -> None:
+          now: datetime | None = None, ceiling: "Ceiling | None" = None) -> None:
     """Fill in cycle.problems / cycle.notes. Ordered most severe first."""
     body = cycle.body
 
@@ -543,14 +543,17 @@ def judge(cycle: Cycle, timeout_s: int | None, min_output: int = THIN_OUTPUT_CHA
     # which never happens if the loop died here. So when the caller has told us
     # the per-cycle ceiling, use it: a cycle that opened longer ago than the
     # ceiling cannot still be inside it.
-    if (cycle.unfinished and not cycle.abandoned and timeout_s
+    if ceiling is None:
+        ceiling = (Ceiling(float(timeout_s), "--timeout", f"the {_dur(timeout_s)} limit")
+                   if timeout_s else Ceiling(None, "nothing", "no ceiling was given"))
+    if (cycle.unfinished and not cycle.abandoned and ceiling.seconds
             and now is not None and cycle.started is not None):
         age = (now - cycle.started).total_seconds()
-        if age > timeout_s:
+        if age > ceiling.seconds:
             cycle.abandoned = True
             cycle.problems.append(
-                f"started {_dur(age)} ago and never finished, past the "
-                f"{_dur(timeout_s)} limit - it was killed, not still running")
+                f"started {_dur(age)} ago and never finished, past "
+                f"{ceiling.detail} - it was killed, not still running")
 
     hit, skipped, quoted = _first_match(AUTH_RES, body)
     if hit and quoted:
@@ -601,6 +604,66 @@ def _dur(seconds: float) -> str:
     if s < 86400:
         return f"{s // 3600}h {(s % 3600) // 60:02d}m"
     return f"{s // 86400}d {(s % 86400) // 3600:02d}h"
+
+
+OPEN_CYCLE_SLACK = 3.0            # multiples of the longest cycle on record
+MIN_FINISHED_FOR_CEILING = 3      # below this, the log has not shown what "long" is
+MIN_DERIVED_CEILING_S = 600       # a derived ceiling never accuses anything younger
+
+
+class Ceiling(NamedTuple):
+    """How long an unfinished cycle may stay unfinished before it is a death."""
+
+    seconds: float | None
+    source: str                   # "--timeout" | "this log" | "nothing"
+    detail: str                   # the phrase that goes into the finding
+
+
+def observed_ceiling_s(cycles: list[Cycle]) -> tuple[float | None, str]:
+    """The longest a cycle has ever run here, times slack. And why not, if not.
+
+    ⚠⚠ B92, and the same reader who found B50 found this one too. 0.9.0 would
+    call an unfinished cycle dead only when --timeout said what the ceiling
+    was, on the reasoning that guessing the operator's limit would be inventing
+    a fact. That reasoning was right about the operator's limit and wrong about
+    what is available instead: this is not a guess at the configuration, it is
+    a statement about the file - *no cycle in this log has ever run this long*
+    - and the file carries it. The tool already judged silence against the
+    loop's own history (median_interval_s) while refusing to judge an open
+    cycle against it, which is one tool holding two standards.
+
+    ⚠ max, not median. The median grows while an interval drifts, so it is
+    loosest at the moment it matters most; that was the reader's first finding
+    and it applies here unchanged. A maximum only ever moves the alarm later,
+    never earlier, which is the safe direction for a check whose false positive
+    is calling a live cycle dead.
+    """
+    done = [c.duration_s for c in cycles if c.duration_s is not None]
+    if len(done) < MIN_FINISHED_FOR_CEILING:
+        return None, (f"only {len(done)} finished cycle(s) on record, so this log "
+                      f"has not yet shown what a long cycle looks like here")
+    # ⚠ The floor is not politeness. A log whose cycles all finished in the
+    # same second yields a ceiling of zero, and a ceiling of zero calls every
+    # open cycle - including the run asking the question - dead.
+    return max(max(done) * OPEN_CYCLE_SLACK, MIN_DERIVED_CEILING_S), ""
+
+
+def open_cycle_ceiling(cycles: list[Cycle], timeout_s: int | None) -> Ceiling:
+    """What owns the clock for a cycle that opened and never closed.
+
+    Explicit beats derived: --timeout is the operator saying it outright. With
+    no --timeout the log speaks for itself, and only when it has enough
+    finished cycles to have said anything.
+    """
+    if timeout_s:
+        return Ceiling(float(timeout_s), "--timeout", f"the {_dur(timeout_s)} limit")
+    derived, why = observed_ceiling_s(cycles)
+    if derived is None:
+        return Ceiling(None, "nothing", why)
+    return Ceiling(derived, "this log",
+                   f"no --timeout was given, so the ceiling came from this log: "
+                   f"the longest cycle here ever ran {_dur(max(c.duration_s for c in cycles if c.duration_s is not None))}, "
+                   f"and this one is past {_dur(derived)}")
 
 
 def median_interval_s(cycles: list[Cycle]) -> float | None:
@@ -685,7 +748,8 @@ def declared_interval(path: str | None) -> Declared:
 
 
 def declared_gap(declared: Declared, cycles: list[Cycle],
-                 stale_after_s: int | None = None) -> tuple[str, bool] | None:
+                 stale_after_s: int | None = None, now: datetime | None = None,
+                 ceiling: "Ceiling | None" = None) -> tuple[str, bool] | None:
     """One line when the declared interval was asked for and not obtained.
 
     Returns (line, is_finding) or None. ⚠ The split matters more than the line.
@@ -702,7 +766,21 @@ def declared_gap(declared: Declared, cycles: list[Cycle],
     if not declared.asked or declared.reason is None:
         return None
     starts = [c for c in cycles if c.started]
-    running = bool(starts) and max(starts, key=lambda c: c.started).unfinished
+    last = max(starts, key=lambda c: c.started) if starts else None
+    running = last is not None and last.unfinished
+
+    # ⚠⚠ B92. The exemption below rests on "a cycle is running", and a loop
+    # that died mid-cycle is precisely the case where that assumption is false
+    # - so the branch written to explain the missing file was absolving the one
+    # event the file was added to catch. An exemption granted on an assumption
+    # has to expire, because the assumption is what fails.
+    killed_age = None
+    if (running and ceiling is not None and ceiling.seconds
+            and now is not None and last.started is not None):
+        age = (now - last.started).total_seconds()
+        if age > ceiling.seconds:
+            running, killed_age = False, age
+
     if stale_after_s is not None and stale_after_s > 0:
         return (f"--next-interval-file was not usable ({declared.reason}); "
                 f"--stale-after was given, so silence is dated by that instead", False)
@@ -713,6 +791,12 @@ def declared_gap(declared: Declared, cycles: list[Cycle],
         return (f"--next-interval-file has no number right now ({declared.reason}). "
                 f"A cycle is still open, so this is the expected shape for a loop that "
                 f"clears the file when it starts. Silence is dated by {fallback}", False)
+    if killed_age is not None:
+        return (f"--next-interval-file has no number ({declared.reason}), and the "
+                f"cycle that would have written it opened {_dur(killed_age)} ago and "
+                f"never closed ({ceiling.detail}). ⚠ The missing file is the loop "
+                f"dying mid-cycle, not a cycle in progress. Silence is dated by "
+                f"{fallback}", True)
     return (f"--next-interval-file was asked for and gave nothing "
             f"({declared.reason}), and the last cycle finished - so the loop "
             f"exited without writing its own next interval. Silence is dated by "
@@ -1321,7 +1405,8 @@ def main(argv: list[str] | None = None) -> int:
     # whether or not you asked to look at today.
     declared = declared_interval(args.next_interval_file)
     stale = check_staleness(cycles, now, stale_after_s, declared.seconds)
-    gap = declared_gap(declared, cycles, stale_after_s)
+    ceiling = open_cycle_ceiling(cycles, args.timeout)
+    gap = declared_gap(declared, cycles, stale_after_s, now, ceiling)
 
     excluded = 0
     if args.since is not None:
@@ -1344,7 +1429,7 @@ def main(argv: list[str] | None = None) -> int:
 
     flag_abandoned(cycles, set(interleaved))
     for c in cycles:
-        judge(c, args.timeout, args.min_output, now)
+        judge(c, args.timeout, args.min_output, now, ceiling)
     flag_repeats(cycles)
     advice = suggest_interval(cycles, args.per_day)
 

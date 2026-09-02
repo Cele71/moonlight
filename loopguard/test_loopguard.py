@@ -1298,12 +1298,134 @@ class AKilledLastCycleIsNotStillRunning(unittest.TestCase):
         lg.judge(c, timeout_s=3 * 3600, now=datetime.now())
         self.assertEqual(c.problems, [])
 
-    def test_without_a_ceiling_nothing_is_claimed(self):
-        # No --timeout means nobody outside the run owns the clock, and
-        # guessing one would be inventing the fact.
+    def test_judge_alone_with_no_ceiling_claims_nothing(self):
+        # judge sees one cycle; one cycle carries no history to derive from.
+        # The log-wide ceiling is built by open_cycle_ceiling and passed in.
         c = self._unfinished(minutes_ago=4000)
         lg.judge(c, timeout_s=None, now=datetime.now())
         self.assertEqual(c.problems, [])
+
+
+def finished(minutes_ago: float, ran_minutes: float) -> lg.Cycle:
+    """A cycle that started that long ago and took that long."""
+    started = datetime.now() - timedelta(minutes=minutes_ago)
+    return lg.Cycle(source="test.log", started=started,
+                    ended=started + timedelta(minutes=ran_minutes),
+                    body="A" * 300, rc=0)
+
+
+def still_open(minutes_ago: float) -> lg.Cycle:
+    started = datetime.now() - timedelta(minutes=minutes_ago)
+    return lg.Cycle(source="test.log", started=started, body="A" * 300, rc=None,
+                    unfinished=True)
+
+
+class TheExemptionExpires(unittest.TestCase):
+    """B92. The reader who found B50 came back for the other half of it.
+
+    0.9.0 called an unfinished cycle dead only when --timeout said what long
+    was, and the supervisor deletes the interval file when a cycle *starts* -
+    so a cycle killed mid-run has no file, and the branch that explains a
+    missing file said "a cycle is open, this is the designed shape". The one
+    event the file exists to catch was the one event classified as normal, in
+    the default configuration where --timeout is not passed.
+
+    ⚠ The general shape: an exemption granted on an assumption has to expire,
+    because the assumption is exactly what fails in the case being missed.
+    """
+
+    def _history(self, *, longest_minutes=20):
+        return [finished(300, 5), finished(250, 5), finished(200, longest_minutes)]
+
+    def test_the_log_supplies_a_ceiling_when_timeout_does_not(self):
+        secs, why = lg.observed_ceiling_s(self._history())
+        self.assertEqual(why, "")
+        self.assertAlmostEqual(secs, 20 * 60 * lg.OPEN_CYCLE_SLACK)
+
+    def test_the_ceiling_is_the_longest_not_the_typical(self):
+        # ⚠ The same reader's first finding: a median grows while the interval
+        # drifts, so it is loosest at the moment it matters most. A maximum can
+        # only ever move the alarm later.
+        drifting = [finished(300, 5), finished(250, 5), finished(200, 5),
+                    finished(150, 5), finished(100, 90)]
+        secs, _ = lg.observed_ceiling_s(drifting)
+        self.assertAlmostEqual(secs, 90 * 60 * lg.OPEN_CYCLE_SLACK)
+
+    def test_too_little_history_claims_nothing_and_says_why(self):
+        # The loop that died on its second cycle: still no ceiling, and the
+        # absence is spoken rather than silently falling through.
+        secs, why = lg.observed_ceiling_s([finished(60, 5)])
+        self.assertIsNone(secs)
+        self.assertIn("1 finished cycle", why)
+
+    def test_instant_cycles_do_not_produce_a_ceiling_of_zero(self):
+        # A ceiling of zero would call the run asking the question dead.
+        secs, _ = lg.observed_ceiling_s([finished(9, 0), finished(6, 0), finished(3, 0)])
+        self.assertEqual(secs, lg.MIN_DERIVED_CEILING_S)
+
+    def test_an_explicit_timeout_still_wins(self):
+        c = lg.open_cycle_ceiling(self._history(), timeout_s=3 * 3600)
+        self.assertEqual(c.seconds, 3 * 3600.0)
+        self.assertEqual(c.source, "--timeout")
+
+    def test_a_killed_cycle_is_named_with_no_timeout_given(self):
+        # ⚠ The reader's exact configuration.
+        cycles = self._history() + [still_open(minutes_ago=4000)]
+        ceiling = lg.open_cycle_ceiling(cycles, timeout_s=None)
+        for c in cycles:
+            lg.judge(c, None, now=datetime.now(), ceiling=ceiling)
+        killed = cycles[-1]
+        self.assertTrue(killed.problems, "a cycle open for 66 hours read as healthy")
+        self.assertIn("it was killed, not still running", " ".join(killed.problems))
+        self.assertIn("came from this log", " ".join(killed.problems))
+
+    def test_the_run_asking_the_question_is_still_left_alone(self):
+        # ⚠ The direction that matters more. Complaining every single run is
+        # how a check gets skipped, which is how B84 survived.
+        cycles = self._history() + [still_open(minutes_ago=10)]
+        ceiling = lg.open_cycle_ceiling(cycles, timeout_s=None)
+        for c in cycles:
+            lg.judge(c, None, now=datetime.now(), ceiling=ceiling)
+        self.assertEqual(cycles[-1].problems, [])
+
+
+class TheMissingFileIsNotAlwaysNormal(unittest.TestCase):
+    """B92, the other half: declared_gap classified the death as the design."""
+
+    def _missing(self):
+        return lg.Declared(None, "there is no file at state/next_minutes", True)
+
+    def _history(self):
+        # ⚠ Older than the open cycle below: "running" means the *latest*
+        # start has no end, so the fixture has to be in real order.
+        return [finished(8000, 5), finished(7000, 5), finished(6000, 20)]
+
+    def test_an_open_cycle_past_the_ceiling_makes_it_a_finding(self):
+        cycles = self._history() + [still_open(minutes_ago=4000)]
+        ceiling = lg.open_cycle_ceiling(cycles, None)
+        line, is_finding = lg.declared_gap(self._missing(), cycles, None,
+                                           datetime.now(), ceiling)
+        self.assertTrue(is_finding, "the loop dying mid-cycle read as the designed shape")
+        self.assertIn("dying mid-cycle", line)
+
+    def test_an_open_cycle_inside_the_ceiling_is_still_the_designed_shape(self):
+        cycles = self._history() + [still_open(minutes_ago=10)]
+        ceiling = lg.open_cycle_ceiling(cycles, None)
+        line, is_finding = lg.declared_gap(self._missing(), cycles, None,
+                                           datetime.now(), ceiling)
+        self.assertFalse(is_finding)
+        self.assertIn("expected shape", line)
+
+    def test_with_no_ceiling_at_all_the_old_answer_stands(self):
+        # Too little history and no --timeout: nothing outside the run owns the
+        # clock, so the exemption holds. ⚠ Saying "killed" here would be the
+        # invention the original reasoning was right to refuse.
+        cycles = [finished(8000, 5), still_open(minutes_ago=4000)]
+        ceiling = lg.open_cycle_ceiling(cycles, None)
+        self.assertIsNone(ceiling.seconds)
+        _, is_finding = lg.declared_gap(self._missing(), cycles, None,
+                                        datetime.now(), ceiling)
+        self.assertFalse(is_finding)
 
 
 
