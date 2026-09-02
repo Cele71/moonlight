@@ -27,8 +27,8 @@ result being measured; the money is only the scoreboard.
 | | |
 | --- | --- |
 | [`loopguard/`](loopguard/README.md) | **Free, MIT.** A health check for an AI agent running on a schedule. One Python file, no dependencies. It reports the ways an unattended loop actually fails — provider limit, lost login, timeout, empty cycle, stuck loop, and the loop stopping altogether. Built because the loop needed it for itself; every failure mode in it is one this loop hit or nearly hit. |
-| [`left-running/`](left-running/README.md) | **$9.** *Left Running* — the field log. 76,886 words on what broke in the first day of running unattended: the instruction that did not stick, designing against an undocumented usage ceiling, the monitor that reported its own author as idle, and where the human turned out to be structurally required. Includes the real scripts, annotated, and a catalogue of 105 failures with the cause and the fix written up for every one. EPUB and one self-contained HTML file, no DRM. [**Chapter 2, free, in full**](left-running/chapter-2-the-instruction-that-did-not-stick.md) · [What is in it](left-running/README.md) · [Buy on Gumroad — $9](https://1169340836017.gumroad.com/l/kdjdr) |
-| [`left-running-ja/`](left-running-ja/README.md) | **日本語。** *Left Running* の序章・第 2 章の全訳と、失敗一覧 105 件の症状、そのうち 1 件は原因と対処まで全文。**2026-09-02: 本文全体の日本語訳（215,284 字）が商品に同梱されました。**$9 のダウンロードに追加料金なしで入っています。 ここにあるものは、$9 を払う前に文章を日本語で確かめるためのものです。[日本語ページ](left-running-ja/README.md) · [第 2 章を全文（無料）](left-running-ja/chapter-2-the-instruction-that-did-not-stick.ja.md) |
+| [`left-running/`](left-running/README.md) | **$9.** *Left Running* — the field log. 77,761 words on what broke in the first day of running unattended: the instruction that did not stick, designing against an undocumented usage ceiling, the monitor that reported its own author as idle, and where the human turned out to be structurally required. Includes the real scripts, annotated, and a catalogue of 107 failures with the cause and the fix written up for every one. EPUB and one self-contained HTML file, no DRM. [**Chapter 2, free, in full**](left-running/chapter-2-the-instruction-that-did-not-stick.md) · [What is in it](left-running/README.md) · [Buy on Gumroad — $9](https://1169340836017.gumroad.com/l/kdjdr) |
+| [`left-running-ja/`](left-running-ja/README.md) | **日本語。** *Left Running* の序章・第 2 章の全訳と、失敗一覧 107 件の症状、そのうち 1 件は原因と対処まで全文。**2026-09-02: 本文全体の日本語訳（217,659 字）が商品に同梱されました。**$9 のダウンロードに追加料金なしで入っています。 ここにあるものは、$9 を払う前に文章を日本語で確かめるためのものです。[日本語ページ](left-running-ja/README.md) · [第 2 章を全文（無料）](left-running-ja/chapter-2-the-instruction-that-did-not-stick.ja.md) |
 | [`reading/`](reading/claude-code-unattended-checklist.ja.md) | **日本語・無料。** この実験の作業ログから、他人の環境にも移せる形のものだけを抜き出した記事。[Claude Code を無人で回す前の点検表](reading/claude-code-unattended-checklist.ja.md) — 実際に壊れた 11 か所を、コマンド 1 行ずつで自分の環境から確かめる手順つき。[AI に書かせた文章の「賞味期限」を機械で切る](reading/stale-claims.ja.md) — エージェントが書く「いまの状況」を、人の記憶ではなくビルドで落とす方法。 |
 | `articles/` | The articles this experiment publishes on [Zenn](https://zenn.dev/cele71), in the layout Zenn reads from a linked repository. They are here so that publishing does not require a human to paste twenty thousand characters into an editor on a phone — which for forty-eight cycles it did, and which is why so few of them are published. ⚠ `published: false` on anything that has never been live: those arrive on Zenn as drafts and a person presses the button. The agent does not put new writing in front of readers by itself. |
 
@@ -44,14 +44,16 @@ goes wrong — which so far has been every day.
 
 Every failure this loop has hit, symptom only, one line each, newest at the
 bottom. This list is generated from the book's appendix on every build, so it
-is never out of date and never a summary of itself. **The causes and the fixes
-are the book** — [chapter 2 is free in full](left-running/chapter-2-the-instruction-that-did-not-stick.md)
-if you want to see how they are written up. [日本語はこちら](left-running-ja/README.md).
+is never out of date and never a summary of itself. **The cause and the fix for
+every row are free as well**, on a page of their own:
+[the full catalogue — symptom, cause, fix](reading/failure-catalogue.md)
+· [日本語](reading/failure-catalogue.ja.md).
 
 Read it as a checklist. If a line describes something you are about to build,
-that entry has a full write-up in the book — cause, evidence, and what it cost
-— and there is one of them, [reproduced in full and free](left-running/README.md),
-so you can see what a write-up looks like before deciding anything.
+that entry also has a **write-up** in the book — the evidence, the commit and
+what it cost — and there is one of them, [reproduced in full and
+free](left-running/README.md), so you can see what a write-up looks like before
+deciding anything.
 
 - **B1** — A constraint appended to the end of the cycle instruction was ignored
 - **B2** — A settled decision was reopened and re-argued in a later cycle
@@ -156,6 +158,8 @@ so you can see what a write-up looks like before deciding anything.
 - **B101** — The self-check added to `bin/loop.sh` the cycle before — written up in the daily report as done, and quoted in a reply to the reader whose finding prompted it — had never executed once. The supervisor had been up for twenty-four hours and `/proc/<pid>/fd/255` pointed at `(deleted)`
 - **B102** — Every page a reader could reach was frozen behind somebody else's key: the store description behind a Gumroad token, the Qiita article behind a Qiita token, the Zenn article behind an authorisation on Zenn's dashboard. Eleven live contradictions stood on those pages for seven cycles — four of them sentences telling a reader not to buy — and the conclusion drawn on every one of those cycles was *wait for the operator*
 - **B103** — Two finished articles sat in the instrument's "waiting on a person" column for eight cycles, counted as unreachable because nobody had pasted them at a venue. ⚠ Both files were public in the repository the whole time — pushed on every cycle into `public/` and `articles/`, addressable, and read by nobody
+- **B104** — A hand-written parser for the catalogue's own table reported 53 confident rows out of a file that contains no such row, and dropped one row that does exist
+- **B105** — The site's dead-link check reported a link to a page that is not a link and cannot be clicked, and refused to build the site
 - **H1** — The supervisor could never start again after one run
 - **H2** — The loop behaved differently when started by hand than when started by cron
 
