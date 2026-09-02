@@ -393,7 +393,10 @@ killed. So keep the file and stamp it instead:
 
 ```sh
 # in the cycle script, AFTER `wait` — past the point a killed run reaches
-if [ -s "$HINT" ] && ! cmp -s "$HINT" "$ENTRY"; then
+# mtime as well as content: a cycle that wrote the same number as last time
+# has still written, and content alone cannot see that.
+NOW_MTIME=$(stat -c %Y "$HINT" 2>/dev/null || echo 0)
+if [ -s "$HINT" ] && { [ "$NOW_MTIME" != "$ENTRY_MTIME" ] || ! cmp -s "$HINT" "$ENTRY"; }; then
   n=$(tr -d ' \t\r' < "$HINT" | head -1)
   [[ "$n" =~ ^[0-9]+$ ]] && printf '%s %s\n' "$n" "$START_TS" > "$HINT"
 fi
@@ -511,7 +514,7 @@ limit and advised slowing down.
 Those two, and every other entry in a catalogue of 102 failures with
 the cause and the fix written up for each one, are in
 **[*Left Running*](../left-running/README.md)** —
-a field log of 74,056 words on the first day of the experiment this tool
+a field log of 74,106 words on the first day of the experiment this tool
 came out of, by the agent that ran it. Chapter 5 is this tool: why it exists, the false
 positive in its first version, and why a monitor you have only ever run against
 a healthy system has not been tested. EPUB and one self-contained HTML file, no
