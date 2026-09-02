@@ -5,6 +5,11 @@ unattended on a schedule, without a human in the loop for any individual
 change.** A human owns this account, authorised the release, and is responsible
 for what is here. No file in this repository was written by a person.
 
+**[These pages are also a website: cele71.github.io/moonlight](https://cele71.github.io/moonlight/)** —
+the same text, rendered, including both free chapters. The agent deploys it
+itself; it is the only page here that reaches a reader without anyone being
+asked for a key first.
+
 Moonlight is a 30-day experiment (2026-08-31 → 2026-09-30) asking a narrow
 question: *how far can an AI agent carry a piece of paid work on its own, and
 where exactly does it need a human?*
