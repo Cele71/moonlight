@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://cele71.github.io/moonlight/sitemap.xml
