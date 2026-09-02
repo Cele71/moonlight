@@ -285,7 +285,10 @@ Anything else needs a `--start-re` with a `ts` group matching your format.
   and it needs at least three starts before it will guess at all. `0` turns the
   check off, which is what you want when reading an archived log on purpose.
 - `--next-interval-file PATH` — a file holding one integer: the loop's own
-  declared minutes until its next start. Used instead of the median.
+  declared minutes until its next start. Used instead of the median. Since
+  0.11.0 the integer may be followed by the start time of the cycle that wrote
+  it — `45 2026-09-03T00:30:20+09:00` — which lets the supervisor stop deleting
+  the file. A bare integer still means exactly what it meant before.
 
 ### Why `--next-interval-file` exists
 
@@ -375,6 +378,58 @@ until three cycles have finished.
    loop dying mid-cycle, not a cycle in progress
 ```
 
+### 0.11.0: stop deleting the file, stamp it
+
+The same reader again, a third time, on the fix above: it still needs something
+outside the run to own the clock. A run killed by a watchdog is
+*missing-while-a-cycle-is-open*, which lands in the branch called the designed
+shape, and `--timeout` is exactly what the common configuration does not pass.
+
+Their diagnosis is one sentence and it is the whole thing: **absence is carrying
+two jobs at once, freshness and value.** Deleting the hint on entry buys the
+guarantee *if the file is here, this cycle wrote it*, and pays for it with a
+hole exactly the width of a running cycle — the window in which a cycle can be
+killed. So keep the file and stamp it instead:
+
+```sh
+# in the cycle script, AFTER `wait` — past the point a killed run reaches
+if [ -s "$HINT" ] && ! cmp -s "$HINT" "$ENTRY"; then
+  n=$(tr -d ' \t\r' < "$HINT" | head -1)
+  [[ "$n" =~ ^[0-9]+$ ]] && printf '%s %s\n' "$n" "$START_TS" > "$HINT"
+fi
+```
+
+Then a stale value reads as *stale* rather than as *nothing*, and a cycle that
+died mid-run has a deadline to blow past with no `--timeout` and no history:
+
+```
+?  --next-interval-file still holds the previous cycle's number, stamped
+   2026-09-02 18:01, and a cycle is open. That is the expected shape - and
+   unlike a deleted file it still dates the deadline, so a cycle killed
+   mid-run blows past it without anything outside the run owning the clock
+
+!! no cycle has started for 5h 00m - the loop may have stopped (last start
+   2026-09-02 19:41; it declared its next start 30m away before going quiet)
+```
+
+The second line is the gain, and it is measured rather than argued: on the same
+log with the file deleted instead of stamped, silence falls back to the median
+— which grew with the drift — and nothing is printed at all.
+
+The guarantee the `rm` was buying comes back through the stamp, not through
+faith: the supervisor compares the stamp against the moment it launched the
+cycle and falls back to its own default if the number is older. And loopguard
+can now say things absence could never say — *the last cycle reached its footer
+without declaring*, and *two cycles have started since this number was
+written*, which is a count, and absence cannot be counted.
+
+⚠ The second field has to parse as a timestamp or the whole file is refused,
+exactly as `25 minutes` was refused before. A new spelling that quietly widens
+what an old file means is a change made to files belonging to people who never
+read this page.
+
+---
+
 The longest, not the median — that is the same reader's first finding applied
 here. A median grows while an interval drifts, so it is loosest at the moment it
 matters most; a maximum can only move the alarm later, and later is the safe
@@ -409,7 +464,7 @@ Standard library only, no test framework to install:
 python3 -m unittest discover -s . -v      # from the directory holding loopguard.py
 ```
 
-159 tests. The ones named `test_negated_*` and `test_thin_output_on_unfinished_*`
+172 tests. The ones named `test_negated_*` and `test_thin_output_on_unfinished_*`
 are regressions for two bugs that shipped: reading the agent's own sentence
 *"no evidence of a usage limit"* as a usage limit and advising a slowdown, and
 reporting the cycle currently running loopguard as having done nothing. Both are
@@ -453,10 +508,10 @@ the tool once reported the cycle that was running it as having done nothing, and
 it once read the agent's own sentence *"no evidence of a usage limit"* as a usage
 limit and advised slowing down.
 
-Those two, and every other entry in a catalogue of 101 failures with
+Those two, and every other entry in a catalogue of 102 failures with
 the cause and the fix written up for each one, are in
 **[*Left Running*](../left-running/README.md)** —
-a field log of 72,772 words on the first day of the experiment this tool
+a field log of 74,056 words on the first day of the experiment this tool
 came out of, by the agent that ran it. Chapter 5 is this tool: why it exists, the false
 positive in its first version, and why a monitor you have only ever run against
 a healthy system has not been tested. EPUB and one self-contained HTML file, no

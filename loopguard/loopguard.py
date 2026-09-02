@@ -68,7 +68,7 @@ from dataclasses import dataclass, field, asdict
 from datetime import date, datetime, timedelta, timezone
 from typing import Iterable, Iterator, NamedTuple
 
-__version__ = "0.10.0"
+__version__ = "0.11.0"
 
 # ⚠ B52. The two-stage design was "free tool at the door, book behind it", and
 # the door had no handle on the inside: this file named neither. The README
@@ -707,11 +707,13 @@ def declared_interval_s(path: str | None) -> float | None:
 
 
 class Declared(NamedTuple):
-    """What --next-interval-file yielded, and why it yielded nothing."""
+    """What --next-interval-file yielded, why it yielded nothing, and whose it is."""
 
     seconds: float | None
     reason: str | None            # None when a number was read
     asked: bool                   # was a path given at all
+    stamp: datetime | None = None     # which cycle wrote it, if it says
+    raw_stamp: str | None = None      # the second field verbatim, parsed or not
 
 
 def declared_interval(path: str | None) -> Declared:
@@ -726,17 +728,37 @@ def declared_interval(path: str | None) -> Declared:
     operator passed --next-interval-file, believed the good deadline was in
     use, and got the drifting one. A missing file is not "no information": it
     says the loop is between writing that number and writing the next one.
+
+    ⚠⚠ B100, and the same reader again. 0.10.0 answered the killed cycle by
+    borrowing a clock from outside the run (--timeout, or the longest cycle in
+    the log). The reader's answer needs neither: *stamp the file instead of
+    deleting it*. A supervisor that clears the hint on entry buys one thing -
+    the guarantee that any number present was written this cycle - and pays for
+    it with a hole exactly the width of a running cycle, because during that
+    hole absence is doing two jobs at once, freshness and value. Writing the
+    cycle's own identity next to the minutes splits those jobs: the value stays
+    readable the whole time, and the stamp says whose it is. A stale number
+    then reads as stale rather than as nothing, so a cycle that dies mid-run
+    still has a deadline to blow past.
+
+    So the file is one integer of minutes, optionally followed by whitespace
+    and a timestamp naming the cycle that wrote it:
+
+        45
+        45 2026-09-03T00:30:20+09:00
+
+    A bare integer is still valid and still means what it meant in 0.10.0.
     """
     if not path:
         return Declared(None, None, False)
     try:
         with open(path, encoding="utf-8", errors="replace") as fh:
-            raw = fh.read(64).strip()
+            raw = fh.read(128).strip()
     except FileNotFoundError:
         return Declared(None, f"there is no file at {path}", True)
     except OSError as e:
         return Declared(None, f"{path} could not be read ({e.strerror or e})", True)
-    m = re.match(r"^([0-9]+)\s*$", raw)
+    m = re.match(r"^([0-9]+)(?:[ \t]+(\S.*?))?\s*$", raw)
     if not m:
         shown = raw[:24] + ("..." if len(raw) > 24 else "")
         return Declared(None, f"{path} does not hold one whole number of minutes "
@@ -744,7 +766,95 @@ def declared_interval(path: str | None) -> Declared:
     minutes = int(m.group(1))
     if minutes <= 0:
         return Declared(None, f"{path} holds {minutes}, which is not a wait", True)
+    raw_stamp = m.group(2)
+    # ⚠ The second field has to be a timestamp or the file is junk - exactly
+    # as junk as it was in 0.10.0, where "25 minutes" was refused. Accepting the
+    # number and shrugging at the word beside it would let one new spelling
+    # quietly widen what an old file means, and the old files belong to people
+    # who are not reading this changelog.
+    if raw_stamp is not None:
+        stamp = _parse_ts(raw_stamp)
+        if stamp is None:
+            shown = raw_stamp[:24] + ("..." if len(raw_stamp) > 24 else "")
+            return Declared(None, f"{path} holds {minutes} followed by {shown!r}, "
+                                  f"which is not a timestamp naming the cycle that "
+                                  f"wrote it", True)
+        return Declared(minutes * 60.0, None, True, stamp, raw_stamp)
     return Declared(minutes * 60.0, None, True)
+
+
+# How far apart the supervisor's stamp and the log's start line may be and
+# still name the same cycle. They are written by the same clock a moment
+# apart, so this is slack for the moment, not for a difference of opinion.
+STAMP_TOLERANCE_S = 120
+
+
+def stamp_gap(declared: Declared, cycles: list[Cycle]) -> tuple[str, bool] | None:
+    """Whose cycle wrote the number that is sitting in the file. B100.
+
+    Returns (line, is_finding) or None when there is nothing to say. The four
+    answers, and why each one is or is not a fault:
+
+    * The stamp names the cycle that is open right now -> this cycle has
+      already written its next interval. Nothing to say.
+    * The stamp names the cycle immediately before an open one -> the expected
+      shape. The open cycle has not reached its exit yet, and the number on
+      hand is the last thing the loop promised. ⚠ Said out loud but not a
+      fault: a warning that fires on every healthy run trains the reader to
+      skip warnings (B50).
+    * The last cycle *finished* and the stamp is older than it -> the loop
+      reached its own footer and left the previous cycle's number in place. It
+      exited without declaring. A fault - and one that a supervisor deleting
+      the file on entry could only ever see as an absence.
+    * Two or more starts are newer than the stamp -> at least one whole cycle
+      came and went without writing. A fault, and the count says how many.
+    """
+    if not declared.asked or declared.seconds is None:
+        return None
+    if declared.stamp is None:
+        return None  # bare integer: 0.10.0's contract, unchanged
+    starts = sorted((c for c in cycles if c.started), key=lambda c: c.started)
+    if not starts:
+        return (f"--next-interval-file is stamped {declared.stamp:%Y-%m-%d %H:%M} "
+                f"but no cycle start could be read here, so the stamp names "
+                f"nothing that can be checked", False)
+    # ⚠ Nearest match, not a window. The stamp is written at a cycle's start,
+    # so it should sit on one; the tolerance is slack for the second between
+    # the supervisor's clock and the log line, and nothing else. A loop whose
+    # cycles are a minute apart would have every recent start inside a window,
+    # and the check would go quiet exactly on the fastest loops.
+    idx = min(range(len(starts)),
+              key=lambda i: abs((starts[i].started - declared.stamp).total_seconds()))
+    off = (starts[idx].started - declared.stamp).total_seconds()
+    last = starts[-1]
+    if abs(off) > STAMP_TOLERANCE_S:
+        if off < 0:   # every start is older than the stamp
+            return (f"--next-interval-file is stamped {declared.stamp:%Y-%m-%d %H:%M}, "
+                    f"which is ahead of every cycle start in these logs (the latest "
+                    f"is {last.started:%Y-%m-%d %H:%M}). Either the logs are behind "
+                    f"or the stamp is not from this loop", True)
+        return (f"--next-interval-file is stamped {declared.stamp:%Y-%m-%d %H:%M}, "
+                f"which matches no cycle start in these logs - the oldest here is "
+                f"{starts[0].started:%Y-%m-%d %H:%M}, so the logs may have rotated "
+                f"past the cycle that wrote it. The number cannot be dated", False)
+    behind = len(starts) - 1 - idx
+    if behind == 0:
+        return None  # the open (or last) cycle wrote it itself
+    if behind >= 2:
+        return (f"{behind} cycle(s) have started since --next-interval-file "
+                f"was written ({declared.stamp:%Y-%m-%d %H:%M}), so at least "
+                f"{behind - 1} of them exited without declaring their own "
+                f"next interval. The deadline in use is that old", True)
+    if last.unfinished:
+        return (f"--next-interval-file still holds the previous cycle's number, "
+                f"stamped {declared.stamp:%Y-%m-%d %H:%M}, and a cycle is open. "
+                f"That is the expected shape - and unlike a deleted file it "
+                f"still dates the deadline, so a cycle killed mid-run blows "
+                f"past it without anything outside the run owning the clock", False)
+    when = f" at {last.ended:%Y-%m-%d %H:%M}" if last.ended else ""
+    return (f"the last cycle finished{when} and left --next-interval-file holding "
+            f"the previous cycle's number (stamped {declared.stamp:%Y-%m-%d %H:%M}) "
+            f"- it reached its footer without declaring its own next interval", True)
 
 
 def declared_gap(declared: Declared, cycles: list[Cycle],
@@ -763,8 +873,12 @@ def declared_gap(declared: Declared, cycles: list[Cycle],
       leave the number. That is the loop failing to complete its own exit path,
       and the deadline below is now the drifting one. A finding.
     """
-    if not declared.asked or declared.reason is None:
+    if not declared.asked:
         return None
+    if declared.reason is None:
+        # A number was read. The only question left is whose cycle wrote it,
+        # and that is B100's question, not B50's.
+        return stamp_gap(declared, cycles)
     starts = [c for c in cycles if c.started]
     last = max(starts, key=lambda c: c.started) if starts else None
     running = last is not None and last.unfinished
@@ -790,7 +904,11 @@ def declared_gap(declared: Declared, cycles: list[Cycle],
     if running:
         return (f"--next-interval-file has no number right now ({declared.reason}). "
                 f"A cycle is still open, so this is the expected shape for a loop that "
-                f"clears the file when it starts. Silence is dated by {fallback}", False)
+                f"clears the file when it starts. Silence is dated by {fallback}. "
+                f"\u26a0 A supervisor that stamps the cycle's start time next to the "
+                f"minutes instead of deleting the file keeps the number readable "
+                f"here, and a cycle killed mid-run then blows past its own "
+                f"deadline with no --timeout needed (B100)", False)
     if killed_age is not None:
         return (f"--next-interval-file has no number ({declared.reason}), and the "
                 f"cycle that would have written it opened {_dur(killed_age)} ago and "
@@ -1314,7 +1432,13 @@ def main(argv: list[str] | None = None) -> int:
                          "quiet, so it works from the first cycle and does not "
                          "drift upward with a dying loop. If the file is absent "
                          "or unreadable loopguard says so and names the rule it "
-                         "fell back to - it never downgrades in silence")
+                         "fell back to - it never downgrades in silence. The file "
+                         "is one integer of minutes, optionally followed by the "
+                         "start time of the cycle that wrote it "
+                         "('45 2026-09-03T00:30:20+09:00'); with that stamp the "
+                         "supervisor can leave the file in place instead of "
+                         "deleting it on entry, so the deadline stays readable "
+                         "while a cycle runs and a killed cycle blows past it")
     ap.add_argument("--min-output", type=int, default=THIN_OUTPUT_CHARS, metavar="CHARS",
                     help=f"below this many characters a cycle counts as having done nothing (default {THIN_OUTPUT_CHARS})")
     ap.add_argument("--start-re", default=DEFAULT_START_RE, help="regex for a cycle start line (needs a 'ts' group)")
@@ -1444,6 +1568,8 @@ def main(argv: list[str] | None = None) -> int:
                     "path": args.next_interval_file,
                     "seconds": declared.seconds,
                     "reason": declared.reason,
+                    "stamp": declared.stamp.isoformat() if declared.stamp else None,
+                    "raw_stamp": declared.raw_stamp,
                     "note": gap[0] if gap else None,
                     "is_finding": bool(gap and gap[1]),
                 },

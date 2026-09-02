@@ -13,6 +13,7 @@ import io
 import json
 import os
 import re
+import shutil
 import sys
 import tempfile
 import unittest
@@ -1494,6 +1495,160 @@ class CarriesItsOwnProvenance(unittest.TestCase):
                 lg.main([path, "--json"])
             self.assertEqual(json.loads(out.getvalue())["catalogue"],
                              lg.CATALOGUE_URL)
+
+
+def stamped(minutes: int, when: datetime | None) -> str:
+    """The file as the supervisor writes it in 0.11.0."""
+    return f"{minutes} {when.isoformat()}" if when else str(minutes)
+
+
+class AStaleNumberIsNotNoNumber(unittest.TestCase):
+    """B100. The same reader, a third time, on the fix for their second one.
+
+    0.10.0 answered the killed cycle by borrowing a clock from outside the run.
+    The reader's answer needs no outside clock: absence was carrying freshness
+    and value at once, so stamp the cycle's identity next to the minutes and
+    stop deleting the file. Then a stale value reads as stale rather than as
+    nothing, and a cycle that dies mid-run has a deadline to blow past.
+    """
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+
+    def tearDown(self):
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    def _file(self, text: str) -> str:
+        path = os.path.join(self.dir, "next_minutes")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        return path
+
+    # --- reading the file -------------------------------------------------
+    def test_a_bare_integer_still_means_what_it_meant(self):
+        """⚠ The old contract is not allowed to break. Every existing operator
+        writes a bare integer, and 0.11.0 arriving as a silent behaviour change
+        would be the tool doing to them what B50 did to me."""
+        d = lg.declared_interval(self._file("25\n"))
+        self.assertEqual(d.seconds, 1500.0)
+        self.assertIsNone(d.reason)
+        self.assertIsNone(d.stamp)
+        self.assertIsNone(lg.stamp_gap(d, [finished(60, 5)]))
+
+    def test_the_stamp_is_read_alongside_the_minutes(self):
+        when = datetime.now() - timedelta(minutes=120)
+        d = lg.declared_interval(self._file(stamped(45, when)))
+        self.assertEqual(d.seconds, 2700.0)
+        self.assertIsNone(d.reason)
+        # ⚠ delta, not places: the stamp is second-resolution, the clock is not.
+        self.assertAlmostEqual(d.stamp.timestamp(), when.timestamp(), delta=1.5)
+
+    def test_a_second_field_that_is_not_a_timestamp_is_still_junk(self):
+        """⚠⚠ The reason the old refusal of '25 minutes' has to survive. A
+        new spelling that quietly widens what an old file means is a change
+        made to files belonging to people who never read the changelog."""
+        for junk in ("45 sometime-tuesday", "25 minutes", "90 min"):
+            d = lg.declared_interval(self._file(junk))
+            self.assertIsNone(d.seconds, f"parsed {junk!r} as an interval")
+            self.assertIn("not a timestamp", d.reason)
+
+    # --- whose number is it -----------------------------------------------
+    def test_the_open_cycle_holding_the_previous_number_is_the_normal_shape(self):
+        """The case the delete existed to make impossible, and the case that
+        cost B92: here the number is present and dates the deadline."""
+        prev, now_open = finished(200, 20), still_open(30)
+        d = lg.declared_interval(self._file(stamped(90, prev.started)))
+        line, is_finding = lg.stamp_gap(d, [prev, now_open])
+        self.assertFalse(is_finding)
+        self.assertIn("expected shape", line)
+        self.assertIn("killed mid-run", line)
+
+    def test_a_cycle_that_wrote_its_own_number_says_nothing(self):
+        c = still_open(30)
+        d = lg.declared_interval(self._file(stamped(90, c.started)))
+        self.assertIsNone(lg.stamp_gap(d, [finished(200, 20), c]))
+
+    def test_a_finished_cycle_that_left_the_old_number_is_a_fault(self):
+        """⚠ Under delete-on-entry this was visible only as an absence. Here
+        the file names the cycle that wrote it, so the tool can say which one
+        skipped its exit path."""
+        prev, last = finished(200, 20), finished(60, 10)
+        d = lg.declared_interval(self._file(stamped(90, prev.started)))
+        line, is_finding = lg.stamp_gap(d, [prev, last])
+        self.assertTrue(is_finding)
+        self.assertIn("without declaring", line)
+
+    def test_two_starts_since_the_stamp_are_counted(self):
+        """Absence cannot count. A stamp can: two cycles came and went."""
+        a, b, c = finished(300, 20), finished(200, 20), still_open(30)
+        d = lg.declared_interval(self._file(stamped(90, a.started)))
+        line, is_finding = lg.stamp_gap(d, [a, b, c])
+        self.assertTrue(is_finding)
+        self.assertIn("2 cycle(s) have started", line)
+
+    def test_a_stamp_ahead_of_every_start_is_reported_not_trusted(self):
+        d = lg.declared_interval(self._file(stamped(90, datetime.now() + timedelta(hours=3))))
+        line, is_finding = lg.stamp_gap(d, [finished(60, 10)])
+        self.assertTrue(is_finding)
+        self.assertIn("ahead of every cycle start", line)
+
+    def test_slack_of_two_minutes_still_names_the_same_cycle(self):
+        """The supervisor's clock and the log's clock are the same clock a
+        moment apart. Slack for the moment, not for a disagreement."""
+        c = still_open(30)
+        near = c.started + timedelta(seconds=90)
+        d = lg.declared_interval(self._file(stamped(90, near)))
+        self.assertIsNone(lg.stamp_gap(d, [finished(200, 20), c]))
+
+    # --- what it buys -----------------------------------------------------
+    def test_the_killed_cycle_is_dated_by_its_own_declaration(self):
+        """⚠⚠ The point of the whole change. A cycle opened, was killed, and
+        no --timeout, no --stale-after and no outside clock were supplied. The
+        number the loop itself wrote is still on disk, so the silence has a
+        deadline and blows past it."""
+        killed = still_open(400)
+        cycles = [finished(1000, 20), finished(800, 20), killed]
+        d = lg.declared_interval(self._file(stamped(30, cycles[1].started)))
+        stale = lg.check_staleness(cycles, datetime.now(), None, d.seconds)
+        self.assertIsNotNone(stale)
+        self.assertIn("may have stopped", stale)
+
+    def test_deleting_the_file_leaves_that_same_death_undated(self):
+        """The before picture, kept as a test so the gain is not a claim."""
+        killed = still_open(400)
+        cycles = [finished(1000, 20), finished(800, 20), killed]
+        gone = lg.declared_interval(os.path.join(self.dir, "not-there"))
+        self.assertIsNone(gone.seconds)
+        line, is_finding = lg.declared_gap(gone, cycles, None, datetime.now(),
+                                           lg.Ceiling(None, "nothing", "no ceiling"))
+        self.assertFalse(is_finding)
+        self.assertIn("expected shape", line)
+
+    def test_the_advice_in_that_branch_names_the_way_out(self):
+        """⚠ A tool that can see the operator is in the shape it has a fix for
+        and does not say so is keeping the fix for itself."""
+        cycles = [finished(1000, 20), finished(800, 20), still_open(30)]
+        gone = lg.declared_interval(os.path.join(self.dir, "not-there"))
+        line, _ = lg.declared_gap(gone, cycles, None, datetime.now(),
+                                  lg.Ceiling(None, "nothing", "no ceiling"))
+        self.assertIn("stamps the cycle's start time", line)
+
+    def test_the_stamp_reaches_the_json(self):
+        when = datetime.now() - timedelta(minutes=120)
+        log = os.path.join(self.dir, "run.log")
+        with open(log, "w", encoding="utf-8") as fh:
+            fh.write(f"===== {when:%Y-%m-%d %H:%M:%S} cycle start =====\n"
+                     "work\n"
+                     f"===== {when + timedelta(minutes=5):%Y-%m-%d %H:%M:%S} cycle end rc=0 =====\n")
+        out = io.StringIO()
+        with redirect_stdout(out):
+            lg.main([log, "--json", "--next-interval-file", self._file(stamped(45, when)),
+                     "--start-re", r"===== (?P<ts>[^=]+?) cycle start =====",
+                     "--end-re", r"===== (?P<ts>[^=]+?) cycle end rc=(?P<rc>-?\d+) ====="])
+        payload = json.loads(out.getvalue())
+        self.assertEqual(payload["declared_interval"]["seconds"], 2700.0)
+        self.assertIsNotNone(payload["declared_interval"]["stamp"])
+
 
 
 # ⚠⚠ B43. This block used to sit 126 lines above here, and everything below it
