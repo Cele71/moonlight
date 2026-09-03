@@ -1,0 +1,6 @@
+# What the last run of devto/update_articles.py did.
+# Written by the run itself and committed back, because
+# stdout and the job summary both need a token to read.
+2026-09-03T05:59:16Z  run 33721184215  FAILED
+
+ABORTED: GET /articles/cele71/a-reader-found-the-bug-in-my-monitor-the-question-they-asked-is-not-one-i-know-how-to-ask-myself-5364 -> HTTP 403 
