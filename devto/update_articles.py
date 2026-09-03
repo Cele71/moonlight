@@ -106,8 +106,14 @@ def call(method, path, token, payload=None):
             raw = resp.read().decode('utf-8', 'replace')
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode('utf-8', 'replace')[:400]
-        fail('%s %s -> HTTP %s %s'
-             % (method, path, exc.code, detail.replace(token, '<redacted>')))
+        # WARNING The first 403 this ever returned had an empty body, which
+        # says nothing about whether it came from the API or from the edge in
+        # front of it. The content type separates those two: a JSON error is
+        # the API refusing, an HTML one is a proxy refusing on its behalf.
+        fail('%s %s -> HTTP %s %s [%s] %s'
+             % (method, path, exc.code, exc.reason,
+                exc.headers.get('content-type', '?'),
+                detail.replace(token, '<redacted>') or '<empty body>'))
     except Exception as exc:
         fail('%s %s -> %s' % (method, path, exc.__class__.__name__))
     try:
@@ -116,22 +122,53 @@ def call(method, path, token, payload=None):
         fail('%s %s -> the reply was not JSON' % (method, path))
 
 
-def live_article(want, token):
+def mine(token):
+    """Every article on this account, by slug.
+
+    WARNING B109. This used to resolve each post through
+    /articles/{username}/{slug} - the public address a reader can open - which
+    answered 403 with an empty body from inside the runner. That endpoint is
+    the one anybody may fetch, so it is the one sitting behind whatever the
+    venue puts in front of anonymous traffic. /articles/me/all is the opposite
+    kind of address: it only exists for the holder of this key, it names no
+    account in its path, and it cannot return somebody else's post.
+    """
+    got = call('GET', '/articles/me/all?per_page=100', token)
+    if not isinstance(got, list):
+        fail('/articles/me/all did not return a list of articles')
+    out = {}
+    for item in got:
+        if isinstance(item, dict) and item.get('slug'):
+            out[item['slug']] = item
+    if not out:
+        fail('this key sees 0 articles on the account - it is a key for '
+             'somebody else, or it has no article scope')
+    note('the key sees %d article(s) on this account' % len(out))
+    return out
+
+
+def live_article(want, seen, token):
     """The live post this file names, or a stop.
 
-    Resolved from the address a person can open, and checked to belong to this
-    account before anything is written to it.
+    WARNING Checked to belong to this account before anything is written to
+    it, even though /articles/me/all cannot hand back a stranger's post: the
+    id below is what gets written to, and an assertion about the thing you are
+    about to change is worth its two lines.
     """
-    got = call('GET', '/articles/%s/%s' % (want['username'], want['slug']),
-               token)
-    if not isinstance(got, dict) or not got.get('id'):
-        fail('%s/%s did not resolve to an article'
-             % (want['username'], want['slug']))
+    got = seen.get(want['slug'])
+    if not got or not got.get('id'):
+        fail('%s is not among the %d article(s) this key can see - it was '
+             'deleted, renamed, or the key belongs to another account'
+             % (want['slug'], len(seen)))
     who = ((got.get('user') or {}).get('username') or '').lower()
-    if who != USER:
+    if who and who != USER:
         fail('%s belongs to @%s, not @%s - refusing to write to it'
-             % (want['slug'], who or '?', USER))
-    return got
+             % (want['slug'], who, USER))
+    # WARNING The list endpoint is a summary. The comparison below decides
+    # whether anything is sent at all, so it has to run against the full
+    # record - a missing field in a summary reads as "different" and would
+    # send a PUT on every run, or reads as equal and would send none.
+    return call('GET', '/articles/%s' % got['id'], token)
 
 
 def main():
@@ -142,6 +179,7 @@ def main():
     if not files:
         note('### dev.to: nothing to update\nNo devto/*.json in the repository.')
         return
+    seen = mine(token)
     changed, same = 0, 0
     for path in files:
         name = os.path.basename(path)
@@ -163,7 +201,7 @@ def main():
             fail('%s has %d tag(s); dev.to takes 1 to 4'
                  % (name, len(want.get('tags') or [])))
 
-        got = live_article(want, token)
+        got = live_article(want, seen, token)
         note('%s -> id %s / live title %r / live disclosure %r'
              % (want['slug'][:40], got.get('id'),
                 (got.get('title') or '')[:70],
