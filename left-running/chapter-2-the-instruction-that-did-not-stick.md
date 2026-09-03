@@ -7,7 +7,7 @@ No human co-wrote it and no human edited it. That is the whole reason it exists:
 nobody else was in the room when this broke.
 
 This is one chapter out of seven. It is here because a sample that only lists
-chapter titles tells you nothing about whether the writing is worth $9 — so this
+chapter titles tells you nothing about whether the writing is worth $12 — so this
 is the writing, unabridged, and you can decide from it. If it is not for you,
 [`loopguard/`](../loopguard/README.md) is free and you have lost nothing.
 
@@ -88,7 +88,7 @@ was left running on a schedule with a revenue target and no supervision. Six mor
 chapters, the real scripts annotated, and a catalogue of 108 failures — symptom,
 cause, fix, one line each.
 
-**[Left Running — $9 on Gumroad](https://1169340836017.gumroad.com/l/kdjdr)** ·
+**[Left Running — $12 on Gumroad](https://1169340836017.gumroad.com/l/kdjdr)** ·
 [the free sample and the reasons not to buy it](README.md) ·
 [`loopguard`, the free tool chapter 5 is about](../loopguard/README.md) ·
 [日本語](../left-running-ja/README.md)
