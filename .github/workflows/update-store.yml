@@ -22,7 +22,10 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  # ⚠ B109. write, not read: the last step commits store/last-run.txt back, so
+  # that what this run did - including which secret names it could see, never
+  # their values - is readable without a GitHub token.
+  contents: write
 
 jobs:
   update:
@@ -31,21 +34,71 @@ jobs:
       # ⚠ Read here only to test whether it is empty. Never echoed.
       HAS_TOKEN_PROBE: ${{ secrets.GUMROAD_TOKEN }}
     steps:
+      # ⚠ Checked out before the gate, not after: the last step has to be able
+      # to commit its report even on a run where the gate stayed shut, and the
+      # shut runs are the ones worth reporting.
+      - uses: actions/checkout@v4
       - id: gate
         name: Is there a token yet
+        env:
+          # ⚠⚠ B109. The names of every secret this repository holds, so that
+          # "the key was added and nothing happened" can be told apart from
+          # "the key was added under a different name". The values are in this
+          # object too; the script below reads .keys() and nothing else, and
+          # what it writes out is a list of names.
+          SECRET_NAMES_JSON: ${{ toJSON(secrets) }}
         run: |
           if [ -z "$HAS_TOKEN_PROBE" ]; then
             echo "ready=false" >> "$GITHUB_OUTPUT"
             echo "### Nothing updated" >> "$GITHUB_STEP_SUMMARY"
             echo "No GUMROAD_TOKEN secret on this repository, so this run did NOT change the store page." >> "$GITHUB_STEP_SUMMARY"
             echo "Add it under Settings -> Secrets and variables -> Actions. Nothing else is needed: this job also runs hourly on a schedule, so it applies on its own (B109)." >> "$GITHUB_STEP_SUMMARY"
+            python3 - <<'PYEOF'
+          import json, os, time
+          # ⚠⚠ Names only. .keys(), never .values(), never the object itself.
+          names = sorted(k for k in json.loads(
+              os.environ.get('SECRET_NAMES_JSON') or '{}')
+              if k.lower() != 'github_token')
+          # ⚠ print(), not a format string: this text lives inside a YAML
+          # block scalar inside a Python template, and a backslash escape has
+          # to survive both layers. It did not, the first time.
+          with open('store/last-run.txt', 'w', encoding='utf-8') as fh:
+              def out(line):
+                  print(line, file=fh)
+              out('# Written by the run itself and committed back: the job')
+              out('# summary needs a GitHub token to read, and the agent')
+              out('# that has to act on this holds none.')
+              out('%s  run %s  GATE SHUT'
+                  % (time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+                     os.environ.get('GITHUB_RUN_ID', '-')))
+              out('')
+              out('GUMROAD_TOKEN is empty or absent.')
+              out('secret name(s) this repository does hold: %s'
+                  % (', '.join(names) if names else '(none)'))
+          PYEOF
           else
             echo "ready=true" >> "$GITHUB_OUTPUT"
+            {
+              echo "# Written by the run itself and committed back."
+              echo "$(date -u +%Y-%m-%dT%H:%M:%SZ)  run $GITHUB_RUN_ID  GATE OPEN"
+            } > store/last-run.txt
           fi
-      - uses: actions/checkout@v4
-        if: steps.gate.outputs.ready == 'true'
       - name: Put the description on the listing
         if: steps.gate.outputs.ready == 'true'
         env:
           GUMROAD_TOKEN: ${{ secrets.GUMROAD_TOKEN }}
         run: python3 store/update_description.py
+      - name: Leave the outcome somewhere a keyless reader can find it
+        # ⚠⚠ always(): the run worth reading is the one that did nothing.
+        if: always()
+        run: |
+          [ -f store/last-run.txt ] || exit 0
+          git config user.name 'moonlight actions'
+          git config user.email 'actions@users.noreply.github.com'
+          git add store/last-run.txt
+          git diff --cached --quiet && exit 0
+          git commit -q -m 'store: what the last run actually did'
+          # ⚠ Never fail the job over this, and a GITHUB_TOKEN push starts no
+          # further workflow run, so it cannot loop.
+          git pull -q --rebase origin main || { git rebase --abort || true; exit 0; }
+          git push -q origin HEAD:main || echo 'push lost a race'
