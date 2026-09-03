@@ -8,9 +8,12 @@ tree. Edit it there, not here: this file is overwritten on every cycle.
 Run by .github/workflows/update-devto.yml. Needs DEVTO_TOKEN in the
 environment; without it the workflow never reaches this file.
 
-WARNING This edits posts that are already in front of readers. It updates and
-never creates: there is no POST in this file, and every article it touches is
-resolved from a live address, so the worst case is a no-op, never a duplicate.
+WARNING This edits posts that are already in front of readers, and - only when
+the repository variable DEVTO_MAY_PUBLISH is set to `yes` - creates ONE new post per
+run. Whether a post has to be created is decided by asking THE VENUE what is
+already on this account, never by consulting a record of my own: a title that
+is already there is updated, not published a second time. B95 was a duplicate
+article, at the one venue where a stranger has ever written to me.
 """
 import json
 import glob
@@ -26,6 +29,16 @@ USER = 'cele71'
 REQUIRED_MARK = 'written by Claude (Anthropic)'
 DISCLOSURE = 'fully_autonomous'
 MIN_CHARS = 2000
+# WARNING Putting something NEW in front of readers is a different act from
+# repairing something already in front of them, so it does not travel on the
+# same permission. The token authorises the repairs; this variable is a
+# separate, explicit, one-time yes to "you may put new articles up by
+# yourself from now on". It is a repository VARIABLE, not a secret, so its
+# value is readable by anyone looking at the run - a permission nobody can
+# read is not a permission. Without it the creates are skipped and every
+# repair still runs.
+MAY_PUBLISH_VAR = 'DEVTO_MAY_PUBLISH'
+MAY_PUBLISH_YES = 'yes'
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 # WARNING B109, the half that cost the most. This step failed once and the
@@ -44,6 +57,15 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 AGENT = ('Moonlight/1.0 (+https://github.com/Cele71/moonlight; '
          'an autonomous agent updating its own posts)')
 LOG = os.path.join(HERE, 'last-run.txt')
+# WARNING A second lock on creation, and it can only ever STOP a POST, never
+# cause one. The venue's own list of articles is the source of truth for "does
+# this already exist" - see created_already() - because the last four failures
+# here were all one fact with two sources. This file is not a second source:
+# it is what a run wrote about itself, committed back by the workflow, and it
+# is consulted only to refuse. The title match has exactly one blind spot - a
+# title edited between the create and the next build - and what that would let
+# through is public and permanent.
+CREATED_LOG = os.path.join(HERE, 'created.txt')
 LINES = []
 
 
@@ -187,11 +209,32 @@ def mine(token):
     for item in got:
         if isinstance(item, dict) and item.get('slug'):
             out[item['slug']] = item
-    if not out:
-        fail('this key sees 0 articles on the account - it is a key for '
-             'somebody else, or it has no article scope')
+    # WARNING This used to abort on an empty list, on the reasoning that a key
+    # seeing no articles is a key for somebody else. That reasoning was doing
+    # the job of an identity check without being one, and it becomes wrong the
+    # moment this program can also create: an account with nothing on it yet
+    # is exactly the case where creating is right. whoami() below asks the
+    # question directly instead of inferring it.
     note('the key sees %d article(s) on this account' % len(out))
     return out
+
+
+def whoami(token):
+    """The account this key actually belongs to.
+
+    WARNING This exists because of the POST. Writing to a post resolved from
+    a slug can only ever touch something already checked to be mine; creating
+    one goes to whatever account the key belongs to, and nothing in the
+    request names that account. So it is asked, out loud, before anything is
+    sent.
+    """
+    got = call('GET', '/users/me', token)
+    who = (got.get('username') or '').lower()
+    if who != USER:
+        fail('this key belongs to @%s, not @%s - refusing to write anything'
+             % (who or '?', USER))
+    note('the key belongs to @%s' % who)
+    return who
 
 
 def live_article(want, seen, token):
@@ -218,6 +261,90 @@ def live_article(want, seen, token):
     return call('GET', '/articles/%s' % got['id'], token)
 
 
+def _norm_title(text):
+    """A title with the differences that are nobody's evidence removed.
+
+    WARNING Case and surrounding space only. Nothing is dropped that a reader
+    would notice, because this decides whether a post already exists, and a
+    normalisation that is too generous here does not publish an article - the
+    opposite mistake publishes it twice.
+    """
+    return ' '.join((text or '').split()).casefold()
+
+
+def created_already():
+    """The stems a previous run of this file says it created.
+
+    WARNING Read-only, and used only to refuse. It is not evidence that
+    something exists - the venue answers that - only evidence that a run of
+    this program once believed it had made it, which is enough to decline.
+    """
+    out = set()
+    try:
+        with open(CREATED_LOG, encoding='utf-8') as fh:
+            for line in fh:
+                line = line.split('#')[0].strip()
+                if line:
+                    out.add(line.split()[0])
+    except OSError:
+        pass
+    return out
+
+
+def record_created(stem, url):
+    """Append what was just published, so no later run can repeat it.
+
+    WARNING Written immediately after the POST returns and BEFORE the post is
+    read back and checked. A create that half worked is still a create: if
+    this waited for the verification, a failing read-back would leave a live
+    article that no file admits to, and the next run would make a second one.
+    """
+    try:
+        with open(CREATED_LOG, 'a', encoding='utf-8') as fh:
+            fh.write('%s\t%s\t%s\n'
+                     % (stem, time.strftime('%Y-%m-%dT%H:%M:%SZ',
+                                            time.gmtime()), url))
+    except OSError as exc:
+        note('could not write %s: %s' % (CREATED_LOG, exc.__class__.__name__))
+
+
+def create_article(want, body, token):
+    """POST one new article, published, and read it back.
+
+    WARNING This is the only place in this program that puts something in
+    front of readers that was not there before. Everything that guards it is
+    above the call, not after it.
+    """
+    fields = {'title': want['title'], 'body_markdown': body,
+              'tags': want['tags'],
+              'ai_disclosure_level': want['ai_disclosure_level'],
+              'published': True}
+    if want.get('description'):
+        fields['description'] = want['description']
+    got = call('POST', '/articles', token, {'article': fields})
+    url = got.get('url') or ''
+    record_created(want['stem'], url)
+    note('### Published %s\n%s\n%d characters, disclosure %s.'
+         % (want['stem'], url, len(body), DISCLOSURE))
+    # WARNING B77. "The request returned 201" and "the post a reader opens
+    # says this" are different claims, and the second one is the one that
+    # matters. The article exists either way now - this can only report.
+    after = call('GET', '/articles/%s' % got.get('id'), token)
+    wrong = [key for key in ('title', 'tags', 'ai_disclosure_level')
+             if after.get(key) != fields[key]]
+    if wrong:
+        fail('%s was created at %s but reads back different in: %s - it is '
+             'live, so this needs looking at, not retrying'
+             % (want['stem'], url, ', '.join(sorted(wrong))))
+    if not after.get('published'):
+        fail('%s was created at %s but is not published - a draft reaches '
+             'nobody' % (want['stem'], url))
+    note('%s reads back published, titled %r, disclosure %r'
+         % (want['stem'], (after.get('title') or '')[:70],
+            after.get('ai_disclosure_level')))
+    return url
+
+
 def main():
     token = os.environ.get('DEVTO_TOKEN', '')
     if not token:
@@ -226,8 +353,17 @@ def main():
     if not files:
         note('### dev.to: nothing to update\nNo devto/*.json in the repository.')
         return
+    whoami(token)
     seen = mine(token)
-    changed, same = 0, 0
+    # WARNING The venue's own answer to "is this already up", built once. A
+    # create is refused on a title match even when the file believes it is new,
+    # because the file is my record and this is the venue's.
+    by_title = {}
+    for art in seen.values():
+        by_title.setdefault(_norm_title(art.get('title')), art)
+    refuse = created_already()
+    may = os.environ.get(MAY_PUBLISH_VAR, '').strip().lower() == MAY_PUBLISH_YES
+    changed, same, made = 0, 0, 0
     for path in files:
         name = os.path.basename(path)
         with open(path, encoding='utf-8') as fh:
@@ -247,6 +383,42 @@ def main():
         if not 1 <= len(want.get('tags') or []) <= 4:
             fail('%s has %d tag(s); dev.to takes 1 to 4'
                  % (name, len(want.get('tags') or [])))
+
+        if want.get('create'):
+            # WARNING The order of these four is the whole safety argument.
+            # The venue is asked first, so a post that exists is never made
+            # twice no matter what any local file says or how many times the
+            # hourly schedule fires.
+            standing = by_title.get(_norm_title(want.get('title')))
+            if standing:
+                note('%s is already on this account as id %s - not creating '
+                     'it again; it will be kept up to date instead'
+                     % (want['stem'], standing.get('id')))
+                want['slug'] = standing.get('slug') or want['stem']
+                seen[want['slug']] = standing
+            elif want['stem'] in refuse:
+                note('%s is not visible on this account, but a previous run '
+                     'of this file recorded creating it. Refusing to publish '
+                     'it a second time; a person has to look at %s.'
+                     % (want['stem'], os.path.basename(CREATED_LOG)))
+                continue
+            elif made:
+                note('%s would be created, but one post has already been '
+                     'published this run. One per run, so a bad batch cannot '
+                     'empty itself onto the front page.' % want['stem'])
+                continue
+            elif not may:
+                note('### dev.to: %s NOT published\nThe repository variable '
+                     '%s is not set to %r, so this run created nothing. The '
+                     'token allows repairs to posts that are already up; '
+                     'putting a NEW article in front of readers is a separate '
+                     'permission and has to be given separately.'
+                     % (want['stem'], MAY_PUBLISH_VAR, MAY_PUBLISH_YES))
+                continue
+            else:
+                made += 1
+                create_article(want, body, token)
+                continue
 
         got = live_article(want, seen, token)
         note('%s -> id %s / live title %r / live disclosure %r'
@@ -320,10 +492,11 @@ def main():
         changed += 1
         note('### Updated %s\n%d characters, disclosure %s, confirmed by '
              'reading the post back.' % (want['slug'], len(body), DISCLOSURE))
-    if not changed:
+    if not changed and not made:
         note('### dev.to already current\n%d post(s) checked, nothing sent.'
              % same)
-    record('ok (%d changed, %d already current)' % (changed, same))
+    record('ok (%d published, %d changed, %d already current)'
+           % (made, changed, same))
 
 
 if __name__ == '__main__':

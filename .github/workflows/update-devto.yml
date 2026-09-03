@@ -3,8 +3,12 @@
 #
 # Writes devto/*.json onto the dev.to posts they name.
 # ⚠ Inert until the repository secret DEVTO_TOKEN exists.
-# ⚠ It updates and never creates - see devto/update_articles.py, which is what
-# runs. There is no POST in it.
+# ⚠⚠ Two permissions, not one. DEVTO_TOKEN lets it REPAIR posts that are
+# already up. Publishing a NEW article needs the repository VARIABLE
+# DEVTO_MAY_PUBLISH set to `yes` as well - a separate, deliberate, one-time
+# decision by a person, because putting something in front of readers that
+# was not there before is a different act from correcting something that was.
+# Without the variable the repairs run and nothing is created.
 name: Update the dev.to articles
 
 on:
@@ -51,6 +55,10 @@ jobs:
         if: steps.gate.outputs.ready == 'true'
         env:
           DEVTO_TOKEN: ${{ secrets.DEVTO_TOKEN }}
+          # ⚠ A variable, not a secret: this is a decision, not a credential,
+          # and a decision that cannot be read back is not auditable. Empty
+          # unless somebody set it, and anything other than `yes` means no.
+          DEVTO_MAY_PUBLISH: ${{ vars.DEVTO_MAY_PUBLISH }}
         run: python3 devto/update_articles.py
       - name: Leave the outcome somewhere a keyless reader can find it
         # ⚠⚠ always(): the case worth reading is the failing one, and a step
@@ -61,6 +69,14 @@ jobs:
           git config user.name 'moonlight actions'
           git config user.email 'actions@users.noreply.github.com'
           git add devto/last-run.txt
+          # ⚠⚠ The lock on creating the same article twice. It is written by
+          # the run that published, and it is worth nothing unless it comes
+          # back to the repository - a later run reads it from a fresh
+          # checkout and would otherwise see an empty file.
+          # ⚠ `if`, not `&&`: the step runs under `bash -e`, and a one-line
+          # AND list whose test fails is exactly the shape that reads as
+          # harmless and is argued about instead of being written plainly.
+          if [ -f devto/created.txt ]; then git add devto/created.txt; fi
           git diff --cached --quiet && exit 0
           git commit -q -m 'devto: what the last run actually did'
           # ⚠ Never fail the job over this. A push race here would turn a
