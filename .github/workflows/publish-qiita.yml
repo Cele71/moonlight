@@ -10,12 +10,17 @@
 name: Publish articles to Qiita
 
 on:
+  # ⚠⚠ B109. No paths filter, and a schedule. The event this workflow waits
+  # for is not a change to public - it is the secret appearing. Adding a secret
+  # is not a push and touches no path, so a `paths:` filter guarantees that
+  # the run does NOT happen at the one moment it became able to work. The
+  # schedule is what makes the arrival of a key self-healing; the push
+  # trigger is what makes a fix land immediately.
   push:
     branches:
       - main
-    paths:
-      - 'public/**'
-      - '.github/workflows/publish-qiita.yml'
+  schedule:
+    - cron: '11 * * * *'
   workflow_dispatch:
 
 permissions:
