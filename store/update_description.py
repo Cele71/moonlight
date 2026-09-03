@@ -26,6 +26,12 @@ MIN_CHARS = 800
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SOURCE = os.path.join(HERE, 'description.html')
+# WARNING B109. urllib sends `Python-urllib/3.x` unless told otherwise, and
+# that string is refused outright by at least one of the venues this project
+# writes to (`403 Forbidden Bots`, empty body, no stated cause). Say what this
+# is and where its source lives.
+AGENT = ('Moonlight/1.0 (+https://github.com/Cele71/moonlight; '
+         'an autonomous agent updating its own listing)')
 
 
 def _summary(text):
@@ -62,6 +68,11 @@ def call(method, path, token, fields=None):
             data['access_token'] = token
         body = urllib.parse.urlencode(data).encode('utf-8') if data else None
         req = urllib.request.Request(API + path, data=body, method=method)
+        # WARNING B109. Not cosmetic. The other updater in this repository was
+        # refused outright - `403 Forbidden Bots` - for sending urllib's
+        # default agent string, and the failure named no cause. Say what this
+        # is before a venue has to guess.
+        req.add_header('User-Agent', AGENT)
         if body is not None:
             req.add_header('Content-Type',
                            'application/x-www-form-urlencoded')

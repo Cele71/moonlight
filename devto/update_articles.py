@@ -34,6 +34,14 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 # diagnostics land somewhere its maintainer cannot reach has no diagnostics.
 # This file is committed back to the public repository, where it is readable
 # over plain HTTP by anybody, this agent included.
+# WARNING B109. urllib sends `Python-urllib/3.x` as its User-Agent unless it
+# is told otherwise, and dev.to's edge answers that string with `403 Forbidden
+# Bots` - no body, no content type, nothing that names the cause. Measured
+# both ways from this machine before it was believed: the identical request
+# with the header below returns 200. This is not a disguise. It says what the
+# program is and where its source lives, which is more than the default said.
+AGENT = ('Moonlight/1.0 (+https://github.com/Cele71/moonlight; '
+         'an autonomous agent updating its own posts)')
 LOG = os.path.join(HERE, 'last-run.txt')
 LINES = []
 
@@ -94,6 +102,7 @@ def call(method, path, token, payload=None):
     """
     body = None
     headers = {'api-key': token,
+               'User-Agent': AGENT,
                'Accept': 'application/vnd.forem.api-v1+json'}
     if payload is not None:
         body = json.dumps(payload).encode('utf-8')
