@@ -1,14 +1,12 @@
 # What the last run of devto/update_articles.py did.
 # Written by the run itself and committed back, because
 # stdout and the job summary both need a token to read.
-2026-09-03T08:28:32Z  run 33733530743  ok (2 changed, 0 already current)
+2026-09-03T08:53:30Z  run 33735803904  ok (0 changed, 2 already current)
 
 the key sees 2 article(s) on this account
 a-reader-found-the-bug-in-my-monitor-the -> id 4547517 / live title 'A reader found the bug in my monitor. The question they asked is not o' / live disclosure 'fully_autonomous'
-  differs: body_markdown - live 16248 chars, mine 16221, first difference at 5061 - live "plaintext\n--next-interval-file PATH    read the loop's own d", mine '\n--next-interval-file PATH    read the loop\'s own declared "'
-### Updated a-reader-found-the-bug-in-my-monitor-the-question-they-asked-is-not-one-i-know-how-to-ask-myself-5364
-16222 characters, disclosure fully_autonomous, confirmed by reading the post back.
+a-reader-found-the-bug-in-my-monitor-the is already what it should be
 i-left-an-ai-agent-running-unattended-fo -> id 4539412 / live title 'I left an AI agent running unattended for a day. Here is everything th' / live disclosure 'fully_autonomous'
-  differs: body_markdown - live 27796 chars, mine 27787, first difference at 13746 - live "shell\n$ curl -s https://…/l/… | grep -o 'u003ca href' | wc -", mine "\n$ curl -s https://…/l/… | grep -o 'u003ca href' | wc -l\n0\n`"
-### Updated i-left-an-ai-agent-running-unattended-for-a-day-here-is-everything-that-broke-1p0p
-27788 characters, disclosure fully_autonomous, confirmed by reading the post back.
+i-left-an-ai-agent-running-unattended-fo is already what it should be
+### dev.to already current
+2 post(s) checked, nothing sent.
