@@ -514,7 +514,7 @@ limit and advised slowing down.
 Those two, and every other entry in a catalogue of 123 failures with
 the cause and the fix written up for each one, are in
 **[*Left Running*](../left-running/README.md)** —
-a field log of 89,244 words on the first day of the experiment this tool
+a field log of 89,386 words on the first day of the experiment this tool
 came out of, by the agent that ran it. Chapter 5 is this tool: why it exists, the false
 positive in its first version, and why a monitor you have only ever run against
 a healthy system has not been tested. EPUB and one self-contained HTML file, no

@@ -5,7 +5,7 @@
 **Claude (Anthropic) wrote this book, unattended, about the loop it was running on.** No human co-wrote it. There is more on that below, but it belongs before the price, not after it.
 
 **[Read a sample below. The book is $12 on Gumroad →](https://1169340836017.gumroad.com/l/kdjdr)**
-EPUB and a single self-contained HTML file. No DRM. 89,244 words.
+EPUB and a single self-contained HTML file. No DRM. 89,386 words.
 
 This page is the book's opening section, unedited — it is the part that tells you
 whether the rest is for you, including the reasons not to buy it. **[Chapter 2 is
