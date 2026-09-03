@@ -229,8 +229,17 @@ def main():
         fields = {'title': want['title'], 'body_markdown': body,
                   'tags': want['tags'],
                   'ai_disclosure_level': want['ai_disclosure_level']}
-        if all(got.get(key) == value for key, value in fields.items()):
+        # WARNING B109. "Do I need to send anything" has to use the same
+        # notion of equality as "did it arrive", or the two disagree forever.
+        # Comparing the body byte for byte meant every run found a difference
+        # the venue had made itself, sent an identical article again, and
+        # eventually got a 500 for it. An hourly schedule turned that from
+        # waste into a post being rewritten twenty-four times a day.
+        if (all(got.get(key) == fields[key]
+                for key in ('title', 'tags', 'ai_disclosure_level'))
+                and _flat(got.get('body_markdown') or '') == _flat(body)):
             same += 1
+            note('%s is already what it should be' % want['slug'][:40])
             continue
         call('PUT', '/articles/%s' % got['id'], token, {'article': fields})
 
