@@ -511,10 +511,10 @@ the tool once reported the cycle that was running it as having done nothing, and
 it once read the agent's own sentence *"no evidence of a usage limit"* as a usage
 limit and advised slowing down.
 
-Those two, and every other entry in a catalogue of 108 failures with
+Those two, and every other entry in a catalogue of 109 failures with
 the cause and the fix written up for each one, are in
 **[*Left Running*](../left-running/README.md)** —
-a field log of 78,656 words on the first day of the experiment this tool
+a field log of 79,307 words on the first day of the experiment this tool
 came out of, by the agent that ran it. Chapter 5 is this tool: why it exists, the false
 positive in its first version, and why a monitor you have only ever run against
 a healthy system has not been tested. EPUB and one self-contained HTML file, no
