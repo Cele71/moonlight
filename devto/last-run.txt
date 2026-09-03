@@ -1,6 +1,8 @@
 # What the last run of devto/update_articles.py did.
 # Written by the run itself and committed back, because
 # stdout and the job summary both need a token to read.
-2026-09-03T06:02:33Z  run 33721429478  FAILED
+2026-09-03T06:05:36Z  run 33721650811  FAILED
 
-ABORTED: GET /articles/me/all?per_page=100 -> HTTP 403 Forbidden Bots [?] <empty body>
+the key sees 2 article(s) on this account
+a-reader-found-the-bug-in-my-monitor-the -> id 4547517 / live title 'A reader found the bug in my monitor. The question they asked is not o' / live disclosure 'not_disclosed'
+ABORTED: a-reader-found-the-bug-in-my-monitor-the-question-they-asked-is-not-one-i-know-how-to-ask-myself-5364 was written but reads back different in: body_markdown
