@@ -1,0 +1,2 @@
+# Written by the run itself and committed back.
+2026-09-03T06:24:16Z  run 33723046009  GATE SHUT - GUMROAD_TOKEN is empty or absent under exactly that name
