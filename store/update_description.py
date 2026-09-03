@@ -12,8 +12,10 @@ WARNING This writes to a page that takes money. It sends exactly one field
 (description) on exactly one product (the one whose permalink is below), and
 it stops rather than guesses at every point where it could be wrong.
 """
+import html
 import json
 import os
+import re
 import sys
 import time
 import urllib.error
@@ -172,6 +174,43 @@ def live_description(token, ident):
     return (product.get('description') or '').strip()
 
 
+def _flat(markup):
+    """The listing's HTML with the changes the venue is entitled to make removed.
+
+    WARNING B112, and it is the store's copy of B110's lesson. The first run
+    that ever got past the gate wrote the description successfully and then
+    aborted, because the read-back demanded the bytes come home unchanged.
+    They never will: Gumroad sanitises what it stores. Measured on the live
+    page 2026-09-03, sent 3789 characters and 3791 came back, and the whole
+    difference was two edits it is entitled to make -
+
+      - a newline inserted after each of the seven <li> tags   (+7)
+      - the numeric reference &#x27; decoded back to '          (-5)
+
+    WARNING Neither the count nor the offset could have told me that. I read
+    the two edits off the live page itself, with no key, out of the JSON that
+    Gumroad renders into the buy page - and only then wrote this.
+
+    WARNING This normalises for COMPARING ONLY. What is sent is `wanted`,
+    untouched, exactly as description.html has it. If this were ever allowed
+    near the payload it would hand the store a description with its character
+    references already decoded.
+
+    WARNING The cost, stated rather than discovered later: whitespace between
+    tags stops being a difference this can see, and so does the choice between
+    a character reference and the character it stands for. Both are invisible
+    to a reader, and the venue overwrites both anyway - a run that insisted on
+    them could never make them stick, which is the exact loop this fixes.
+    """
+    if markup is None:
+        return None
+    text = html.unescape(markup)
+    # Whitespace BETWEEN tags only. Inside text it can be meaningful, and this
+    # is compared against a page a buyer reads.
+    text = re.sub(r'>\s+<', '><', text)
+    return re.sub(r'[ \t]+', ' ', text).strip()
+
+
 def main():
     token = os.environ.get('GUMROAD_TOKEN', '')
     if not token:
@@ -190,7 +229,10 @@ def main():
 
     ident = find_id(token)
     before = live_description(token, ident)
-    if before == wanted:
+    # WARNING B109's fifth lesson, which this script had not learned: "do I
+    # need to send this" and "did it arrive" have to be the same question, or
+    # the two disagree forever and the listing is rewritten on every push.
+    if _flat(before) == _flat(wanted):
         note('### Store description already current\nNothing was sent.')
         record('ok (already current, nothing sent)')
         return
@@ -200,7 +242,7 @@ def main():
     # says this" are different claims, and this project has published the
     # first as if it were the second before (B77).
     after = live_description(token, ident)
-    if after == wanted:
+    if _flat(after) == _flat(wanted):
         note('### Store description updated\n%d characters, confirmed by '
              'reading the listing back.' % len(after))
         record('ok (description written, %d characters)' % len(after))
@@ -209,6 +251,17 @@ def main():
              'description field, so it could not be read back. Check the '
              'listing by hand and fix this script.')
     else:
+        # WARNING B110. Say WHERE. The first version of this line reported two
+        # numbers - 3789 sent, 3791 live - and two numbers cannot tell you
+        # whether a store page was corrupted or whether the venue wrapped a
+        # paragraph. The same push produced the same shape at the other venue,
+        # which turned out to be code-fence languages being added on arrival.
+        live, mine_ = _flat(after), _flat(wanted)
+        at = 0
+        while at < min(len(live), len(mine_)) and live[at] == mine_[at]:
+            at += 1
+        note('  reads back different at offset %d - sent %r, live %r'
+             % (at, mine_[at:at + 80], live[at:at + 80]))
         fail('the listing was written but reads back different (%d characters '
              'sent, %d live)' % (len(wanted), len(after)))
 

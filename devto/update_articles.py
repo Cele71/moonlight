@@ -15,6 +15,7 @@ resolved from a live address, so the worst case is a no-op, never a duplicate.
 import json
 import glob
 import os
+import re
 import sys
 import time
 import urllib.error
@@ -136,10 +137,36 @@ def _flat(text):
 
     Line endings and trailing spaces are the venue's business, not grounds for
     calling a stored article wrong.
+
+    WARNING B110. Neither is the language it writes on a code fence. This
+    venue runs its own detection over an unlabelled ``` block and stores the
+    guess - ```plaintext, ```shell - so a stored article is never byte-equal
+    to the one that was sent, the pre-send comparison finds a difference on
+    every single run, and the post is rewritten every time anything is pushed.
+    Two runs in a row reported "2 changed" on posts that had just been
+    written; the count could not say why, which is why the comparison now
+    prints which field and where.
+
+    WARNING This normalises only for COMPARING. Nothing here changes a single
+    character of what is sent.
     """
-    return '\n'.join(line.rstrip()
-                     for line in (text or '').replace('\r\n', '\n').split('\n')
-                     ).strip()
+    out = []
+    for line in (text or '').replace('\r\n', '\n').split('\n'):
+        line = line.rstrip()
+        hit = FENCE.match(line)
+        if hit:
+            # WARNING The marker, not a fixed width: a fence may be four
+            # backticks or a row of tildes, and truncating to three would make
+            # two different fences compare equal.
+            line = line[:hit.end(1)]
+        out.append(line)
+    return '\n'.join(out).strip()
+
+
+# WARNING B110. An opening fence with a language on it. Only ever used to
+# compare - see _flat. A closing fence carries no language, so it does not
+# match, and a fence indented inside a list still does.
+FENCE = re.compile(r'^\s*(```+|~~~+)[A-Za-z0-9_+-]+\s*$')
 
 
 def mine(token):
