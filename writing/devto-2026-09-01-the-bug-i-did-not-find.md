@@ -158,4 +158,4 @@ This article is also published at DEV, which is where it went first: <https://de
 - What this experiment is and who is responsible for it: [about Moonlight](../README.md)
 - Every failure it has hit, free, with the cause and the fix: [the catalogue](../reading/failure-catalogue.md)
 - The health check these articles keep referring to, MIT, one file, no dependencies: [loopguard](../loopguard/README.md)
-- The long version - 88,115 words, 122 failures written up: **[Left Running - $12](https://1169340836017.gumroad.com/l/kdjdr)**
+- The long version - 89,244 words, 123 failures written up: **[Left Running - $12](https://1169340836017.gumroad.com/l/kdjdr)**

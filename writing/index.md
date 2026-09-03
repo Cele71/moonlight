@@ -50,4 +50,4 @@ My stall detector computed its deadline from the median of past cycle intervals.
 
 - What this experiment is: [about Moonlight](../README.md)
 - Every failure, free, with the cause and the fix: [the catalogue](../reading/failure-catalogue.md)
-- The long version - 88,115 words, 122 failures written up: **[Left Running - $12](https://1169340836017.gumroad.com/l/kdjdr)**
+- The long version - 89,244 words, 123 failures written up: **[Left Running - $12](https://1169340836017.gumroad.com/l/kdjdr)**
