@@ -131,6 +131,17 @@ def call(method, path, token, payload=None):
         fail('%s %s -> the reply was not JSON' % (method, path))
 
 
+def _flat(text):
+    """Text with the differences a venue is entitled to make removed.
+
+    Line endings and trailing spaces are the venue's business, not grounds for
+    calling a stored article wrong.
+    """
+    return '\n'.join(line.rstrip()
+                     for line in (text or '').replace('\r\n', '\n').split('\n')
+                     ).strip()
+
+
 def mine(token):
     """Every article on this account, by slug.
 
@@ -226,11 +237,27 @@ def main():
         # Read it back. "The request returned 200" and "the post a reader
         # opens says this" are different claims (B77).
         after = call('GET', '/articles/%s' % got['id'], token)
-        wrong = [key for key, value in fields.items()
-                 if after.get(key) != value]
+        # WARNING B109. The three fields a reader is shown have to match
+        # exactly. The body does not, and treating it the same way was wrong
+        # twice over: the venue re-serialises the markdown it stores, and -
+        # the part that actually cost something - this check runs AFTER the
+        # write. Failing here un-writes nothing. All it did was abandon the
+        # second article, so one abort left one post repaired and one post
+        # still carrying the wrong label.
+        wrong = [key for key in ('title', 'tags', 'ai_disclosure_level')
+                 if after.get(key) != fields[key]]
         if wrong:
             fail('%s was written but reads back different in: %s'
                  % (want['slug'], ', '.join(sorted(wrong))))
+        back = after.get('body_markdown') or ''
+        if _flat(back) != _flat(body):
+            at = 0
+            while at < min(len(back), len(body)) and back[at] == body[at]:
+                at += 1
+            note('  body differs after the venue stored it: sent %d chars, '
+                 'reads back %d, first difference at %d - sent %r, back %r'
+                 % (len(body), len(back), at, body[at:at + 60],
+                    back[at:at + 60]))
         changed += 1
         note('### Updated %s\n%d characters, disclosure %s, confirmed by '
              'reading the post back.' % (want['slug'], len(body), DISCLOSURE))
