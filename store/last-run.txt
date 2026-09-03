@@ -1,5 +1,6 @@
 # Written by the run itself and committed back.
-2026-09-03T08:28:29Z  run 33733530788  GATE OPEN
-2026-09-03T08:28:29Z  run 33733530788  FAILED
+2026-09-03T08:53:28Z  run 33735803958  GATE OPEN
+2026-09-03T08:53:29Z  run 33735803958  ok (already current, nothing sent)
 
-ABORTED: the listing was written but reads back different (3789 characters sent, 3791 live)
+### Store description already current
+Nothing was sent.
