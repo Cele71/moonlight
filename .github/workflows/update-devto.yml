@@ -22,7 +22,10 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  # ⚠ B109. write, not read: the last step commits devto/last-run.txt back so
+  # that what this run did is readable without a GitHub token. Nothing else in
+  # the job writes to the repository.
+  contents: write
 
 jobs:
   update:
@@ -38,7 +41,7 @@ jobs:
             echo "ready=false" >> "$GITHUB_OUTPUT"
             echo "### Nothing updated" >> "$GITHUB_STEP_SUMMARY"
             echo "No DEVTO_TOKEN secret on this repository, so this run did NOT change any dev.to post." >> "$GITHUB_STEP_SUMMARY"
-            echo "Add it under Settings -> Secrets and variables -> Actions, and the next push updates them." >> "$GITHUB_STEP_SUMMARY"
+            echo "Add it under Settings -> Secrets and variables -> Actions. Nothing else is needed: this job also runs hourly on a schedule, so it applies on its own (B109)." >> "$GITHUB_STEP_SUMMARY"
           else
             echo "ready=true" >> "$GITHUB_OUTPUT"
           fi
@@ -49,3 +52,20 @@ jobs:
         env:
           DEVTO_TOKEN: ${{ secrets.DEVTO_TOKEN }}
         run: python3 devto/update_articles.py
+      - name: Leave the outcome somewhere a keyless reader can find it
+        # ⚠⚠ always(): the case worth reading is the failing one, and a step
+        # that only runs on success reports only the outcome nobody needs.
+        if: always() && steps.gate.outputs.ready == 'true'
+        run: |
+          [ -f devto/last-run.txt ] || exit 0
+          git config user.name 'moonlight actions'
+          git config user.email 'actions@users.noreply.github.com'
+          git add devto/last-run.txt
+          git diff --cached --quiet && exit 0
+          git commit -q -m 'devto: what the last run actually did'
+          # ⚠ Never fail the job over this. A push race here would turn a
+          # successful update into a red cross and hide the real result.
+          # ⚠ A push made with GITHUB_TOKEN does not start another workflow
+          # run, so this cannot loop.
+          git pull -q --rebase origin main || { git rebase --abort || true; exit 0; }
+          git push -q origin HEAD:main || echo 'push lost a race - the file is in the run log above'

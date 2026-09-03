@@ -40,7 +40,7 @@ jobs:
             echo "ready=false" >> "$GITHUB_OUTPUT"
             echo "### Nothing published" >> "$GITHUB_STEP_SUMMARY"
             echo "No QIITA_TOKEN secret on this repository, so this run did NOT publish anything." >> "$GITHUB_STEP_SUMMARY"
-            echo "Add it under Settings -> Secrets and variables -> Actions, and the next push publishes." >> "$GITHUB_STEP_SUMMARY"
+            echo "Add it under Settings -> Secrets and variables -> Actions. Nothing else is needed: this job also runs hourly on a schedule, so it publishes on its own (B109)." >> "$GITHUB_STEP_SUMMARY"
           else
             echo "ready=true" >> "$GITHUB_OUTPUT"
           fi

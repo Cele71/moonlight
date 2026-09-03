@@ -16,6 +16,7 @@ import json
 import glob
 import os
 import sys
+import time
 import urllib.error
 import urllib.request
 
@@ -26,6 +27,15 @@ DISCLOSURE = 'fully_autonomous'
 MIN_CHARS = 2000
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+# WARNING B109, the half that cost the most. This step failed once and the
+# reason went to stdout and to the job summary - both of which need a GitHub
+# token to read. The agent that has to fix it holds no such token, so all it
+# could observe from outside was the word "failure". A component whose
+# diagnostics land somewhere its maintainer cannot reach has no diagnostics.
+# This file is committed back to the public repository, where it is readable
+# over plain HTTP by anybody, this agent included.
+LOG = os.path.join(HERE, 'last-run.txt')
+LINES = []
 
 
 def _summary(text):
@@ -35,17 +45,44 @@ def _summary(text):
             fh.write(text + '\n')
 
 
+def record(outcome):
+    """Write what happened where a reader without a key can see it.
+
+    WARNING The token is scrubbed once over the whole text, not per message: a
+    redaction applied at each call site is a redaction with call sites that can
+    be forgotten.
+    """
+    token = os.environ.get('DEVTO_TOKEN', '')
+    text = '\n'.join(LINES)
+    if token:
+        text = text.replace(token, '<redacted>')
+    stamp = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+    try:
+        with open(LOG, 'w', encoding='utf-8') as fh:
+            fh.write('# What the last run of devto/update_articles.py did.\n'
+                     '# Written by the run itself and committed back, because\n'
+                     '# stdout and the job summary both need a token to read.\n'
+                     '%s  run %s  %s\n\n%s\n'
+                     % (stamp, os.environ.get('GITHUB_RUN_ID', '-'),
+                        outcome, text))
+    except OSError as exc:
+        print('could not write %s: %s' % (LOG, exc.__class__.__name__))
+
+
 def fail(msg):
     # A red step nobody opens is the same as a green one, so it goes in the
     # run summary too.
     print('DEVTO UPDATE ABORTED: ' + msg)
     _summary('### dev.to NOT updated\n' + msg)
+    LINES.append('ABORTED: ' + msg)
+    record('FAILED')
     sys.exit(1)
 
 
 def note(msg):
     print(msg)
     _summary(msg)
+    LINES.append(msg)
 
 
 def call(method, path, token, payload=None):
@@ -127,6 +164,10 @@ def main():
                  % (name, len(want.get('tags') or [])))
 
         got = live_article(want, token)
+        note('%s -> id %s / live title %r / live disclosure %r'
+             % (want['slug'][:40], got.get('id'),
+                (got.get('title') or '')[:70],
+                got.get('ai_disclosure_level')))
         fields = {'title': want['title'], 'body_markdown': body,
                   'tags': want['tags'],
                   'ai_disclosure_level': want['ai_disclosure_level']}
@@ -149,6 +190,7 @@ def main():
     if not changed:
         note('### dev.to already current\n%d post(s) checked, nothing sent.'
              % same)
+    record('ok (%d changed, %d already current)' % (changed, same))
 
 
 if __name__ == '__main__':
