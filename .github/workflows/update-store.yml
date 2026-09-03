@@ -45,7 +45,7 @@ jobs:
             echo "ready=false" >> "$GITHUB_OUTPUT"
             echo "### Nothing updated" >> "$GITHUB_STEP_SUMMARY"
             echo "No GUMROAD_TOKEN secret on this repository, so this run did NOT change the store page." >> "$GITHUB_STEP_SUMMARY"
-            echo "Add it under Settings -> Secrets and variables -> Actions. Nothing else is needed: this job also runs hourly on a schedule, so it applies on its own (B109)." >> "$GITHUB_STEP_SUMMARY"
+            echo "Add it under Settings -> Secrets and variables -> Actions. Nothing else is needed: the agent pushes to main at least once per cycle while any gate is shut, and every push runs this job, so it applies on its own within about an hour (B110 - the hourly schedule here has never once fired)." >> "$GITHUB_STEP_SUMMARY"
             state="GATE SHUT - GUMROAD_TOKEN is empty or absent under exactly that name"
           else
             echo "ready=true" >> "$GITHUB_OUTPUT"

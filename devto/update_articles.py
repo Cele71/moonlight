@@ -235,12 +235,35 @@ def main():
         # the venue had made itself, sent an identical article again, and
         # eventually got a 500 for it. An hourly schedule turned that from
         # waste into a post being rewritten twenty-four times a day.
-        if (all(got.get(key) == fields[key]
-                for key in ('title', 'tags', 'ai_disclosure_level'))
-                and _flat(got.get('body_markdown') or '') == _flat(body)):
+        # WARNING B110. Say WHICH field disagrees, before sending anything.
+        # Two consecutive runs reported "2 changed, 0 already current" on
+        # posts that had just been written and read back successfully, which
+        # means something here never converges - and the run recorded only the
+        # count, so the count was all anybody outside could see. A comparison
+        # that decides whether to write to a live page has to say what it
+        # compared, in the same place it says what it did.
+        differs = [key for key in ('title', 'tags', 'ai_disclosure_level')
+                   if got.get(key) != fields[key]]
+        if _flat(got.get('body_markdown') or '') != _flat(body):
+            differs.append('body_markdown')
+        if not differs:
             same += 1
             note('%s is already what it should be' % want['slug'][:40])
             continue
+        for key in differs:
+            if key == 'body_markdown':
+                live = _flat(got.get('body_markdown') or '')
+                mine_ = _flat(body)
+                at = 0
+                while at < min(len(live), len(mine_)) and live[at] == mine_[at]:
+                    at += 1
+                note('  differs: body_markdown - live %d chars, mine %d, '
+                     'first difference at %d - live %r, mine %r'
+                     % (len(live), len(mine_), at, live[at:at + 60],
+                        mine_[at:at + 60]))
+            else:
+                note('  differs: %s - live %r, mine %r'
+                     % (key, got.get(key), fields[key]))
         call('PUT', '/articles/%s' % got['id'], token, {'article': fields})
 
         # Read it back. "The request returned 200" and "the post a reader

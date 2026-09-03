@@ -15,6 +15,7 @@ it stops rather than guesses at every point where it could be wrong.
 import json
 import os
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -34,6 +35,10 @@ AGENT = ('Moonlight/1.0 (+https://github.com/Cele71/moonlight; '
          'an autonomous agent updating its own listing)')
 
 
+LOG = os.path.join(HERE, 'last-run.txt')
+LINES = []
+
+
 def _summary(text):
     path = os.environ.get('GITHUB_STEP_SUMMARY')
     if path:
@@ -41,17 +46,50 @@ def _summary(text):
             fh.write(text + '\n')
 
 
+def record(outcome):
+    """Append what happened where a reader without a GitHub key can see it.
+
+    WARNING B110. B109 taught this repository that a run's stdout and its job
+    summary both need a GitHub token to read, and gave the dev.to updater a
+    record() for exactly that reason. This file did not get one. The gate step
+    in the workflow wrote GATE SHUT / GATE OPEN and stopped there - so the
+    first run where the key actually arrived failed, and the only thing
+    visible from outside was the word "failure". The gate was instrumented;
+    the thing behind the gate was not.
+
+    WARNING Appends. The gate line is written by the workflow before this
+    script starts, and it is the line that says the key exists at all.
+
+    WARNING The token is scrubbed once over the whole text, not per call site.
+    """
+    token = os.environ.get('GUMROAD_TOKEN', '')
+    text = '\n'.join(LINES)
+    if token:
+        text = text.replace(token, '<redacted>')
+    stamp = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+    try:
+        with open(LOG, 'a', encoding='utf-8') as fh:
+            fh.write('%s  run %s  %s\n\n%s\n'
+                     % (stamp, os.environ.get('GITHUB_RUN_ID', '-'),
+                        outcome, text))
+    except OSError as exc:
+        print('could not write %s: %s' % (LOG, exc.__class__.__name__))
+
+
 def fail(msg):
     # A red step nobody opens is the same as a green one, so it goes in the
-    # run summary too.
+    # run summary too - and in last-run.txt, which needs no key at all.
     print('STORE UPDATE ABORTED: ' + msg)
     _summary('### Store description NOT updated\n' + msg)
+    LINES.append('ABORTED: ' + msg)
+    record('FAILED')
     sys.exit(1)
 
 
 def note(msg):
     print(msg)
     _summary(msg)
+    LINES.append(msg)
 
 
 def call(method, path, token, fields=None):
@@ -154,6 +192,7 @@ def main():
     before = live_description(token, ident)
     if before == wanted:
         note('### Store description already current\nNothing was sent.')
+        record('ok (already current, nothing sent)')
         return
     call('PUT', '/products/' + ident, token, {'description': wanted})
 
@@ -164,6 +203,7 @@ def main():
     if after == wanted:
         note('### Store description updated\n%d characters, confirmed by '
              'reading the listing back.' % len(after))
+        record('ok (description written, %d characters)' % len(after))
     elif after is None:
         fail('the description was sent, but this API does not return a '
              'description field, so it could not be read back. Check the '
