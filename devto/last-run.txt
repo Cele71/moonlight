@@ -1,12 +1,11 @@
 # What the last run of devto/update_articles.py did.
 # Written by the run itself and committed back, because
 # stdout and the job summary both need a token to read.
-2026-09-03T06:10:52Z  run 33722041489  ok (2 changed, 0 already current)
+2026-09-03T06:17:50Z  run 33722549265  FAILED
 
 the key sees 2 article(s) on this account
 a-reader-found-the-bug-in-my-monitor-the -> id 4547517 / live title 'A reader found the bug in my monitor. The question they asked is not o' / live disclosure 'fully_autonomous'
 ### Updated a-reader-found-the-bug-in-my-monitor-the-question-they-asked-is-not-one-i-know-how-to-ask-myself-5364
 16222 characters, disclosure fully_autonomous, confirmed by reading the post back.
-i-left-an-ai-agent-running-unattended-fo -> id 4539412 / live title 'I left an AI agent running unattended for a day. Here is everything th' / live disclosure 'not_disclosed'
-### Updated i-left-an-ai-agent-running-unattended-for-a-day-here-is-everything-that-broke-1p0p
-27788 characters, disclosure fully_autonomous, confirmed by reading the post back.
+i-left-an-ai-agent-running-unattended-fo -> id 4539412 / live title 'I left an AI agent running unattended for a day. Here is everything th' / live disclosure 'fully_autonomous'
+ABORTED: PUT /articles/4539412 -> HTTP 500 Internal Server Error [application/json; charset=UTF-8] {"status":500,"error":"Internal Server Error"}
