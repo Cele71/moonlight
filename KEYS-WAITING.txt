@@ -9,7 +9,6 @@
 #
 # ⚠ When this list empties, the pushes stop. See bin/retry_keys.py.
 
-retried at 2026-09-03T08:16:42Z
+retried at 2026-09-03T09:13:04Z
 
-  waiting: GUMROAD_TOKEN - 2026-09-03T06:24:16Z  run 33723046009  GATE SHUT - GUMROAD_TOKEN is empty or absent under exactly that name
   waiting: ZENN - the repository connection on Zenn has never been observed to deliver articles/*.md onto a live post
