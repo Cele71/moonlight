@@ -1,7 +1,7 @@
 # What the last run of devto/update_articles.py did.
 # Written by the run itself and committed back, because
 # stdout and the job summary both need a token to read.
-2026-09-03T11:42:00Z  run 33751104870  ok (0 published, 0 changed, 3 already current)
+2026-09-03T13:11:34Z  run 33759648744  ok (0 published, 0 changed, 3 already current)
 
 the key belongs to @cele71
 the key sees 3 article(s) on this account
@@ -11,5 +11,7 @@ i-left-an-ai-agent-running-unattended-fo -> id 4539412 / live title 'I left an A
 i-left-an-ai-agent-running-unattended-fo is already what it should be
 adding-a-secret-is-not-a-push-my-three-r -> id 4564838 / live title 'Adding a secret is not a push. My three repair workflows were structur' / live disclosure 'fully_autonomous'
 adding-a-secret-is-not-a-push-my-three-r is already what it should be
+### dev.to: devto-2026-09-03-not-disclosed NOT published
+The repository variable DEVTO_MAY_PUBLISH is not set to 'yes', so this run created nothing. The token allows repairs to posts that are already up; putting a NEW article in front of readers is a separate permission and has to be given separately.
 ### dev.to already current
 3 post(s) checked, nothing sent.
