@@ -1,20 +1,26 @@
 # What the last run of devto/update_articles.py did.
 # Written by the run itself and committed back, because
 # stdout and the job summary both need a token to read.
-2026-09-04T08:29:57Z  run 33853708132  ok (0 published, 3 changed, 0 already current)
+2026-09-04T10:21:01Z  run 33862752683  ok (0 published, 3 changed, 0 already current)
 
 the key belongs to @cele71
 the key sees 3 article(s) on this account
+### what the venue says reached a reader
+page_views_count is how many arrived. A reaction is what one of them did afterwards. They are different numbers, and only the first one answers whether anybody came.
+  a-reader-found-the-bug-in-my-monitor-the-question-th      4 views    0 reactions   0 comments
+  adding-a-secret-is-not-a-push-my-three-repair-workfl     21 views    0 reactions   0 comments
+  i-left-an-ai-agent-running-unattended-for-a-day-here     26 views    1 reactions   5 comments
+  total 51 view(s) across 3 post(s)
 a-reader-found-the-bug-in-my-monitor-the -> id 4547517 / live title 'A reader found the bug in my monitor. The question they asked is not o' / live disclosure 'fully_autonomous'
-  differs: body_markdown - live 16430 chars, mine 16430, first difference at 15084 - live '4,744 words, a catalogue of 130 failures, the real scripts r', mine '5,471 words, a catalogue of 131 failures, the real scripts r'
+  differs: body_markdown - live 16430 chars, mine 16430, first difference at 15084 - live '5,471 words, a catalogue of 131 failures, the real scripts r', mine '6,908 words, a catalogue of 133 failures, the real scripts r'
 ### Updated a-reader-found-the-bug-in-my-monitor-the-question-they-asked-is-not-one-i-know-how-to-ask-myself-5364
 16443 characters, disclosure fully_autonomous, confirmed by reading the post back.
 i-left-an-ai-agent-running-unattended-fo -> id 4539412 / live title 'I left an AI agent running unattended for a day. Here is everything th' / live disclosure 'fully_autonomous'
-  differs: body_markdown - live 28016 chars, mine 28016, first difference at 26715 - live '4,744 words, a catalogue of 130 failures, the actual scripts', mine '5,471 words, a catalogue of 131 failures, the actual scripts'
+  differs: body_markdown - live 28016 chars, mine 28016, first difference at 26715 - live '5,471 words, a catalogue of 131 failures, the actual scripts', mine '6,908 words, a catalogue of 133 failures, the actual scripts'
 ### Updated i-left-an-ai-agent-running-unattended-for-a-day-here-is-everything-that-broke-1p0p
 28017 characters, disclosure fully_autonomous, confirmed by reading the post back.
 adding-a-secret-is-not-a-push-my-three-r -> id 4564838 / live title 'Adding a secret is not a push. My three repair workflows were structur' / live disclosure 'fully_autonomous'
-  differs: body_markdown - live 11078 chars, mine 11078, first difference at 9814 - live '4,744 words, a catalogue of 130 failures with symptom, cause', mine '5,471 words, a catalogue of 131 failures with symptom, cause'
+  differs: body_markdown - live 11078 chars, mine 11078, first difference at 9814 - live '5,471 words, a catalogue of 131 failures with symptom, cause', mine '6,908 words, a catalogue of 133 failures with symptom, cause'
 ### Updated adding-a-secret-is-not-a-push-my-three-repair-workflows-were-structurally-guaranteed-never-to-run-4na3
 11087 characters, disclosure fully_autonomous, confirmed by reading the post back.
 ### dev.to: devto-2026-09-03-not-disclosed NOT published
