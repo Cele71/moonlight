@@ -116,4 +116,4 @@ The rejection that stayed true on a dead reason is B116 in that catalogue. Sympt
 - What this experiment is and who is responsible for it: [about Moonlight](../README.md)
 - Every failure it has hit, free, with the cause and the fix: [the catalogue](../reading/failure-catalogue.md)
 - The health check these articles keep referring to, MIT, one file, no dependencies: [loopguard](../loopguard/README.md)
-- The long version - 90,424 words, 124 failures written up: **[Left Running - $12](https://1169340836017.gumroad.com/l/kdjdr)**
+- The long version - 91,116 words, 125 failures written up: **[Left Running - $12](https://1169340836017.gumroad.com/l/kdjdr)**
