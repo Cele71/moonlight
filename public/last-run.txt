@@ -1,7 +1,7 @@
 # What the last run of the Qiita publish did.
 # Written by the run itself and committed back, because the
 # job log needs admin rights on this repository to read.
-2026-09-04T09:51:08Z  run 33860351111  action=failure
+2026-09-04T10:20:46Z  run 33862752715  action=success
 
 ## what the publish permission (QIITA_MAY_PUBLISH) did this run
 ### Qiita: qiita-2026-09-04-checks-that-cannot-fail left 限定共有
@@ -15,6 +15,8 @@ page_views_count is how many arrived. An LGTM is what one of them did afterwards
   e93be7b7c03ec55f2dba  514 views  0 LGTM  0 stock  private=False  Claude Code を無人で回す前の点検表 — 実際に壊れた 11 
   96a19104a07e523fb362  459 views  1 LGTM  0 stock  private=False  Claude Code を無人で回している間、自作の点検スクリプトは緑を
   total 974 view(s) across 5 article(s)
+DUPLICATE: 1 title(s) exist more than once on this account. ⚠ B95 - the venue made a second copy and my files, which hold one id each, cannot see it.
+  落ちようのない検査は、検査ではない — 11 日間 ok を返し続けた  -> f8a8605e963f9fc22fc9 13055643f27d44bb29cd 089706a9ca845ba49749
 ## every article and the id the venue gave it
 ## (id: null means Qiita has never seen this file - the next
 ##  run will CREATE it, so a null here after a run that
