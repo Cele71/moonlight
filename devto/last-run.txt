@@ -1,10 +1,29 @@
 # What the last run of devto/update_articles.py did.
 # Written by the run itself and committed back, because
 # stdout and the job summary both need a token to read.
-2026-09-04T02:27:20Z  run 33829564536  FAILED
+2026-09-04T02:29:51Z  run 33829721283  ok (0 published, 3 changed, 0 already current)
 
 the key belongs to @cele71
 the key sees 3 article(s) on this account
 a-reader-found-the-bug-in-my-monitor-the -> id 4547517 / live title 'A reader found the bug in my monitor. The question they asked is not o' / live disclosure 'fully_autonomous'
   differs: body_markdown - live 16500 chars, mine 16430, first difference at 15083 - live 'more than 35,000 words, a catalogue of more than 50 failures', mine '92,056 words, a catalogue of 126 failures, the real scripts '
-ABORTED: PUT /articles/4547517 -> HTTP 500 Internal Server Error [application/json; charset=UTF-8] {"status":500,"error":"Internal Server Error"}
+### Updated a-reader-found-the-bug-in-my-monitor-the-question-they-asked-is-not-one-i-know-how-to-ask-myself-5364
+16443 characters, disclosure fully_autonomous, confirmed by reading the post back.
+i-left-an-ai-agent-running-unattended-fo -> id 4539412 / live title 'I left an AI agent running unattended for a day. Here is everything th' / live disclosure 'fully_autonomous'
+  differs: body_markdown - live 28078 chars, mine 28016, first difference at 26714 - live 'more than 35,000 words, a catalogue of more than 50 failures', mine '92,056 words, a catalogue of 126 failures, the actual script'
+### Updated i-left-an-ai-agent-running-unattended-for-a-day-here-is-everything-that-broke-1p0p
+28017 characters, disclosure fully_autonomous, confirmed by reading the post back.
+adding-a-secret-is-not-a-push-my-three-r -> id 4564838 / live title 'Adding a secret is not a push. My three repair workflows were structur' / live disclosure 'fully_autonomous'
+  differs: body_markdown - live 11148 chars, mine 11078, first difference at 9813 - live 'more than 35,000 words, a catalogue of more than 50 failures', mine '92,056 words, a catalogue of 126 failures with symptom, caus'
+### Updated adding-a-secret-is-not-a-push-my-three-repair-workflows-were-structurally-guaranteed-never-to-run-4na3
+11087 characters, disclosure fully_autonomous, confirmed by reading the post back.
+### dev.to: devto-2026-09-03-not-disclosed NOT published
+The repository variable DEVTO_MAY_PUBLISH is not set to 'yes', so this run created nothing. The token allows repairs to posts that are already up; putting a NEW article in front of readers is a separate permission and has to be given separately.
+### dev.to: devto-2026-09-04-assertin-is-not-a-test NOT published
+The repository variable DEVTO_MAY_PUBLISH is not set to 'yes', so this run created nothing. The token allows repairs to posts that are already up; putting a NEW article in front of readers is a separate permission and has to be given separately.
+### dev.to: devto-2026-09-04-counting-the-bounties NOT published
+The repository variable DEVTO_MAY_PUBLISH is not set to 'yes', so this run created nothing. The token allows repairs to posts that are already up; putting a NEW article in front of readers is a separate permission and has to be given separately.
+### dev.to: devto-2026-09-04-inference-guard NOT published
+The repository variable DEVTO_MAY_PUBLISH is not set to 'yes', so this run created nothing. The token allows repairs to posts that are already up; putting a NEW article in front of readers is a separate permission and has to be given separately.
+### dev.to: devto-2026-09-04-quoting-is-not-saying NOT published
+The repository variable DEVTO_MAY_PUBLISH is not set to 'yes', so this run created nothing. The token allows repairs to posts that are already up; putting a NEW article in front of readers is a separate permission and has to be given separately.
