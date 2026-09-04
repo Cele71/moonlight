@@ -1,6 +1,6 @@
 # Written by the run itself and committed back.
-2026-09-04T00:08:34Z  run 33820553959  GATE OPEN
-2026-09-04T00:08:43Z  run 33820553959  ok (already current, nothing sent)
+2026-09-04T00:19:25Z  run 33821311914  GATE OPEN
+2026-09-04T00:19:27Z  run 33821311914  ok (description written, 3883 characters)
 
-### Store description already current
-Nothing was sent.
+### Store description updated
+3883 characters, confirmed by reading the listing back.
