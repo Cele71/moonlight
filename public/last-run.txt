@@ -1,11 +1,20 @@
 # What the last run of the Qiita publish did.
 # Written by the run itself and committed back, because the
 # job log needs admin rights on this repository to read.
-2026-09-04T08:30:01Z  run 33853708176  action=failure
+2026-09-04T09:51:08Z  run 33860351111  action=failure
 
 ## what the publish permission (QIITA_MAY_PUBLISH) did this run
 ### Qiita: qiita-2026-09-04-checks-that-cannot-fail left 限定共有
 The repository variable QIITA_MAY_PUBLISH is not set to yes, so this run made nothing public. The token allows repairs to articles that are already up; putting a NEW article in front of readers is a separate permission and has to be given separately.
+## how many people the venue says arrived
+### what Qiita says reached a reader
+page_views_count is how many arrived. An LGTM is what one of them did afterwards. Only the first answers whether anybody came.
+  f8a8605e963f9fc22fc9  1 views  0 LGTM  0 stock  private=True  落ちようのない検査は、検査ではない — 11 日間 ok を返し続けた 
+  13055643f27d44bb29cd  0 views  0 LGTM  0 stock  private=True  落ちようのない検査は、検査ではない — 11 日間 ok を返し続けた 
+  089706a9ca845ba49749  0 views  0 LGTM  0 stock  private=True  落ちようのない検査は、検査ではない — 11 日間 ok を返し続けた 
+  e93be7b7c03ec55f2dba  514 views  0 LGTM  0 stock  private=False  Claude Code を無人で回す前の点検表 — 実際に壊れた 11 
+  96a19104a07e523fb362  459 views  1 LGTM  0 stock  private=False  Claude Code を無人で回している間、自作の点検スクリプトは緑を
+  total 974 view(s) across 5 article(s)
 ## every article and the id the venue gave it
 ## (id: null means Qiita has never seen this file - the next
 ##  run will CREATE it, so a null here after a run that
