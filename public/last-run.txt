@@ -1,8 +1,11 @@
 # What the last run of the Qiita publish did.
 # Written by the run itself and committed back, because the
 # job log needs admin rights on this repository to read.
-2026-09-04T07:54:45Z  run 33850888016  action=success
+2026-09-04T08:30:01Z  run 33853708176  action=failure
 
+## what the publish permission (QIITA_MAY_PUBLISH) did this run
+### Qiita: qiita-2026-09-04-checks-that-cannot-fail left 限定共有
+The repository variable QIITA_MAY_PUBLISH is not set to yes, so this run made nothing public. The token allows repairs to articles that are already up; putting a NEW article in front of readers is a separate permission and has to be given separately.
 ## every article and the id the venue gave it
 ## (id: null means Qiita has never seen this file - the next
 ##  run will CREATE it, so a null here after a run that
