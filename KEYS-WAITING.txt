@@ -9,6 +9,6 @@
 #
 # ⚠ When this list empties, the pushes stop. See bin/retry_keys.py.
 
-retried at 2026-09-03T11:31:37Z
+retried at 2026-09-04T02:29:35Z
 
   waiting: ZENN - the repository connection on Zenn has never been observed to deliver articles/*.md onto a live post
