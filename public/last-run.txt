@@ -1,0 +1,16 @@
+# What the last run of the Qiita publish did.
+# Written by the run itself and committed back, because the
+# job log needs admin rights on this repository to read.
+2026-09-04T03:03:44Z  run 33831791776  action=failure
+
+## every article and the id the venue gave it
+## (id: null means Qiita has never seen this file - the next
+##  run will CREATE it, so a null here after a run that
+##  claims to have published is the duplicate risk of B95)
+public/qiita-2026-09-01-green-checks.md  id=96a19104a07e523fb362  private=false
+public/qiita-2026-09-02-checklist.md  id=e93be7b7c03ec55f2dba  private=false
+public/qiita-2026-09-04-checks-that-cannot-fail.md  id=f8a8605e963f9fc22fc9  private=true
+
+## what the working tree looks like after the action ran
+?? public/.remote/
+?? public/last-run.txt
