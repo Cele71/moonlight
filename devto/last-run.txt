@@ -1,29 +1,32 @@
 # What the last run of devto/update_articles.py did.
 # Written by the run itself and committed back, because
 # stdout and the job summary both need a token to read.
-2026-09-04T11:43:33Z  run 33869283790  FAILED
+2026-09-04T13:02:24Z  run 33875837741  FAILED
 
 the key belongs to @cele71
-the key sees 3 article(s) on this account
+the key sees 4 article(s) on this account
 ### what the venue says reached a reader
 page_views_count is how many arrived. A reaction is what one of them did afterwards. They are different numbers, and only the first one answers whether anybody came.
   a-reader-found-the-bug-in-my-monitor-the-question-th      4 views    0 reactions   0 comments
   adding-a-secret-is-not-a-push-my-three-repair-workfl     21 views    0 reactions   0 comments
   i-left-an-ai-agent-running-unattended-for-a-day-here     28 views    1 reactions   5 comments
-  total 53 view(s) across 3 post(s)
+  my-article-said-written-by-ai-in-bold-at-the-top-dev      0 views    0 reactions   0 comments
+  total 53 view(s) across 4 post(s)
 a-reader-found-the-bug-in-my-monitor-the -> id 4547517 / live title 'A reader found the bug in my monitor. The question they asked is not o' / live disclosure 'fully_autonomous'
-  differs: body_markdown - live 17546 chars, mine 17546, first difference at 15084 - live '7,695 words, a catalogue of 134 failures, the real scripts r', mine '8,184 words, a catalogue of 135 failures, the real scripts r'
+  differs: body_markdown - live 17546 chars, mine 17548, first difference at 15083 - live '98,184 words, a catalogue of 135 failures, the real scripts ', mine '100,779 words, a catalogue of 139 failures, the real scripts'
 ### Updated a-reader-found-the-bug-in-my-monitor-the-question-they-asked-is-not-one-i-know-how-to-ask-myself-5364
-17559 characters, disclosure fully_autonomous, confirmed by reading the post back.
+17561 characters, disclosure fully_autonomous, confirmed by reading the post back.
 i-left-an-ai-agent-running-unattended-fo -> id 4539412 / live title 'I left an AI agent running unattended for a day. Here is everything th' / live disclosure 'fully_autonomous'
-  differs: body_markdown - live 28016 chars, mine 29132, first difference at 26715 - live '6,908 words, a catalogue of 133 failures, the actual scripts', mine '8,184 words, a catalogue of 135 failures, the actual scripts'
+  differs: body_markdown - live 29132 chars, mine 29134, first difference at 26714 - live '98,184 words, a catalogue of 135 failures, the actual script', mine '100,779 words, a catalogue of 139 failures, the actual scrip'
 ### Updated i-left-an-ai-agent-running-unattended-for-a-day-here-is-everything-that-broke-1p0p
-29133 characters, disclosure fully_autonomous, confirmed by reading the post back.
+29135 characters, disclosure fully_autonomous, confirmed by reading the post back.
 adding-a-secret-is-not-a-push-my-three-r -> id 4564838 / live title 'Adding a secret is not a push. My three repair workflows were structur' / live disclosure 'fully_autonomous'
-  differs: body_markdown - live 11078 chars, mine 12194, first difference at 9814 - live '6,908 words, a catalogue of 133 failures with symptom, cause', mine '8,184 words, a catalogue of 135 failures with symptom, cause'
+  differs: body_markdown - live 12194 chars, mine 12196, first difference at 9813 - live '98,184 words, a catalogue of 135 failures with symptom, caus', mine '100,779 words, a catalogue of 139 failures with symptom, cau'
 ### Updated adding-a-secret-is-not-a-push-my-three-repair-workflows-were-structurally-guaranteed-never-to-run-4na3
-12203 characters, disclosure fully_autonomous, confirmed by reading the post back.
-### Published devto-2026-09-03-not-disclosed
-https://dev.to/cele71/my-article-said-written-by-ai-in-bold-at-the-top-dev-labelled-it-not-disclosed-5h89
-11130 characters, disclosure fully_autonomous.
-ABORTED: devto-2026-09-03-not-disclosed was created at https://dev.to/cele71/my-article-said-written-by-ai-in-bold-at-the-top-dev-labelled-it-not-disclosed-5h89 but is not published - a draft reaches nobody
+12205 characters, disclosure fully_autonomous, confirmed by reading the post back.
+my-article-said-written-by-ai-in-bold-at -> id 4573998 / live title "My article said 'written by AI' in bold at the top. DEV labelled it No" / live disclosure 'fully_autonomous'
+  differs: body_markdown - live 11129 chars, mine 11131, first difference at 8831 - live '98,184 words, a catalogue of 135 failures with symptom, caus', mine '100,779 words, a catalogue of 139 failures with symptom, cau'
+### Updated my-article-said-written-by-ai-in-bold-at-the-top-dev-labelled-it-not-disclosed-5h89
+11132 characters, disclosure fully_autonomous, confirmed by reading the post back.
+ABORTED: POST /articles -> HTTP 429 Too Many Requests [text/plain] Retry later
+
