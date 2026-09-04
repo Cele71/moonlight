@@ -87,11 +87,14 @@ jobs:
           git config user.name 'moonlight actions'
           git config user.email 'actions@users.noreply.github.com'
           git add public/
-          git diff --cached --quiet || git commit -m "qiita: what the last run actually did"
-          # ⚠ A push that loses a race must not turn a working run red. The
-          # next cycle pushes again within the hour and this file is rewritten
-          # from scratch every time, so nothing is lost by giving up here.
-          git push || echo "push lost a race - the next run rewrites this file"
+          git diff --cached --quiet && exit 0
+          git commit -q -m 'qiita: what the last run actually did'
+          # ⚠ Never fail the job over this: a push race here would turn a
+          # successful run into a red cross and hide the real result. ⚠ A push
+          # made with GITHUB_TOKEN starts no further run, so it cannot loop.
+          # ⚠⚠ HEAD:main, not a bare push - the checkout is a detached HEAD.
+          git pull -q --rebase origin main || { git rebase --abort || true; exit 0; }
+          git push -q origin HEAD:main || echo 'push lost a race - the next run rewrites this file'
       - name: Fail if the publish step failed
         # ⚠ After the write-back, never before: a failing step that aborts the
         # job takes the diagnostics with it, which is the whole fault above.
