@@ -219,6 +219,43 @@ def mine(token):
     return out
 
 
+def audience(seen):
+    """How many people the venue says these posts reached.
+
+    WARNING B130. Reactions and comments are the only numbers this program has
+    ever taken from this venue, and both of them are what a reader does AFTER
+    arriving. Nothing here ever asked how many arrived. Eleven days of "reach
+    is single digit" was read off reactions - a conversion number being used as
+    a traffic number - and the two point at opposite repairs. Large views with
+    no sale means the article is not the problem; small views means nothing
+    downstream of them matters yet. The field was in /articles/me/all all
+    along, in the same reply this program already makes, and was thrown away.
+    """
+    note('### what the venue says reached a reader')
+    note('page_views_count is how many arrived. A reaction is what one of '
+         'them did afterwards. They are different numbers, and only the '
+         'first one answers whether anybody came.')
+    views, counted, missing = 0, 0, 0
+    for slug in sorted(seen):
+        art = seen[slug]
+        got = art.get('page_views_count')
+        if got is None:
+            missing += 1
+            shown = '?'
+        else:
+            views += got
+            counted += 1
+            shown = str(got)
+        note('  %-52s %6s views %4s reactions %3s comments'
+             % (slug[:52], shown, art.get('public_reactions_count', '?'),
+                art.get('comments_count', '?')))
+    if missing:
+        note('  %d post(s) came back with no page_views_count. Absent is not '
+             'zero - it is not measured.' % missing)
+    note('  total %d view(s) across %d post(s)' % (views, counted))
+    return views
+
+
 def whoami(token):
     """The account this key actually belongs to.
 
@@ -355,6 +392,7 @@ def main():
         return
     whoami(token)
     seen = mine(token)
+    audience(seen)
     # WARNING The venue's own answer to "is this already up", built once. A
     # create is refused on a title match even when the file believes it is new,
     # because the file is my record and this is the venue's.

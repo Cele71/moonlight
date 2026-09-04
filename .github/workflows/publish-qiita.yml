@@ -133,6 +133,72 @@ jobs:
           for n in notes:
               print(n)
           PY
+      # ⚠⚠ B130. The one number never taken from this venue: how many
+      # people arrived. LGTM and stock are what a reader does AFTER arriving,
+      # and for eleven days they were the only figures on the board, which
+      # made a conversion number stand in for a traffic number. They point at
+      # opposite repairs - views with no sale is an offer problem, no views is
+      # a reach problem - so reading one as the other guarantees fixing the
+      # wrong end. page_views_count is only returned to the author of an item,
+      # which is why it has to be asked for here, inside the job that holds
+      # the key, and written back where a keyless reader can find it.
+      # ⚠ continue-on-error: a missing number must never stop a publish.
+      - id: audience
+        name: How many people the venue says the articles reached
+        if: steps.gate.outputs.ready == 'true'
+        continue-on-error: true
+        env:
+          QIITA_TOKEN: ${{ secrets.QIITA_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import io, json, os, urllib.request
+          NL = chr(10)
+          lines = ['### what Qiita says reached a reader',
+                   'page_views_count is how many arrived. An LGTM is what one '
+                   'of them did afterwards. Only the first answers whether '
+                   'anybody came.']
+          req = urllib.request.Request(
+              'https://qiita.com/api/v2/authenticated_user/items?per_page=100')
+          # ⚠ The key travels in a header and is never printed. B109: name
+          # the program, because the default urllib User-Agent is refused by
+          # more than one venue's edge.
+          req.add_header('Authorization',
+                         'Bearer ' + os.environ.get('QIITA_TOKEN', ''))
+          req.add_header('User-Agent', 'Moonlight/1.0 '
+                         '(+https://github.com/Cele71/moonlight)')
+          items = []
+          try:
+              with urllib.request.urlopen(req, timeout=60) as resp:
+                  items = json.loads(resp.read().decode('utf-8', 'replace'))
+          except Exception as exc:
+              lines.append('could not ask: ' + exc.__class__.__name__ +
+                           ' - no number here means NOT MEASURED, not zero')
+          total, counted, missing = 0, 0, 0
+          for it in items:
+              got = it.get('page_views_count')
+              if got is None:
+                  missing += 1
+                  shown = '?'
+              else:
+                  total += got
+                  counted += 1
+                  shown = str(got)
+              lines.append('  %s  %s views  %s LGTM  %s stock  private=%s  %s'
+                           % (it.get('id'), shown, it.get('likes_count'),
+                              it.get('stocks_count'), it.get('private'),
+                              (it.get('title') or '')[:36]))
+          if items:
+              lines.append('  total %d view(s) across %d article(s)'
+                           % (total, counted))
+          if missing:
+              lines.append('  %d article(s) came back with no '
+                           'page_views_count. Absent is not zero.' % missing)
+          tmp = os.environ.get('RUNNER_TEMP') or '.'
+          with io.open(os.path.join(tmp, 'qiita-audience.txt'), 'w',
+                       encoding='utf-8') as fh:
+              fh.write(NL.join(lines))
+          print(NL.join(lines))
+          PY
       - id: publish
         uses: increments/qiita-cli/actions/publish@v1
         if: steps.gate.outputs.ready == 'true'
@@ -162,6 +228,9 @@ jobs:
             echo
             echo "## what the publish permission ($QIITA_VAR_NAME) did this run"
             cat "${RUNNER_TEMP}/qiita-gate.txt" 2>/dev/null || echo "(the gate step did not run)"
+            echo
+            echo "## how many people the venue says arrived"
+            cat "${RUNNER_TEMP}/qiita-audience.txt" 2>/dev/null || echo "(the audience step did not run)"
             echo
             echo "## every article and the id the venue gave it"
             echo "## (id: null means Qiita has never seen this file - the next"
