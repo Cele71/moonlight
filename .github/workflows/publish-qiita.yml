@@ -86,7 +86,11 @@ jobs:
           } > public/last-run.txt
           git config user.name 'moonlight actions'
           git config user.email 'actions@users.noreply.github.com'
-          git add public/
+          # ⚠ Whatever is named here is committed to a PUBLIC repository, so
+          # it is a list of files and never a folder. `git add public/` swept
+          # in the Qiita CLI's own cache directory on the first run of this
+          # step and published it.
+          git add public/*.md public/last-run.txt
           git diff --cached --quiet && exit 0
           git commit -q -m 'qiita: what the last run actually did'
           # ⚠ Never fail the job over this: a push race here would turn a
