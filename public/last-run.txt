@@ -1,7 +1,7 @@
 # What the last run of the Qiita publish did.
 # Written by the run itself and committed back, because the
 # job log needs admin rights on this repository to read.
-2026-09-04T10:20:46Z  run 33862752715  action=success
+2026-09-04T10:27:33Z  run 33863280233  action=failure
 
 ## what the publish permission (QIITA_MAY_PUBLISH) did this run
 ### Qiita: qiita-2026-09-04-checks-that-cannot-fail left 限定共有
