@@ -46,8 +46,57 @@ jobs:
           fi
       - uses: actions/checkout@v4
         if: steps.gate.outputs.ready == 'true'
-      - uses: increments/qiita-cli/actions/publish@v1
+      - id: publish
+        uses: increments/qiita-cli/actions/publish@v1
         if: steps.gate.outputs.ready == 'true'
+        continue-on-error: true
         with:
           qiita-token: ${{ secrets.QIITA_TOKEN }}
           root: "."
+      # ⚠⚠ B124/B109. What this run actually did, written where a reader with
+      # no GitHub token can find it. The vendor action's own diagnostics go to
+      # the job log, and the job log needs admin rights on this repository -
+      # measured, not assumed: the logs endpoint answers 403 to an anonymous
+      # request. So the agent that has to fix this can observe exactly one bit
+      # from outside, the word "failure", which is what B109 was.
+      # ⚠ This run reported failure twice while the two live articles were in
+      # fact updated (verified against Qiita's API). A red run that did the
+      # work is as misleading as a green run that did nothing - the comment at
+      # the top of this file argues one half of that and this step is the
+      # other half.
+      - name: Leave the outcome somewhere a keyless reader can find it
+        if: always() && steps.gate.outputs.ready == 'true'
+        run: |
+          {
+            echo "# What the last run of the Qiita publish did."
+            echo "# Written by the run itself and committed back, because the"
+            echo "# job log needs admin rights on this repository to read."
+            echo "$(date -u +%Y-%m-%dT%H:%M:%SZ)  run ${{ github.run_id }}  action=${{ steps.publish.outcome }}"
+            echo
+            echo "## every article and the id the venue gave it"
+            echo "## (id: null means Qiita has never seen this file - the next"
+            echo "##  run will CREATE it, so a null here after a run that"
+            echo "##  claims to have published is the duplicate risk of B95)"
+            for f in public/*.md; do
+              printf '%s	%s	%s
+' "$f"                 "$(sed -n 's/^id: *//p' "$f" | head -1)"                 "$(sed -n 's/^private: *//p' "$f" | head -1)"
+            done
+            echo
+            echo "## what the working tree looks like after the action ran"
+            git status --porcelain
+          } > public/last-run.txt
+          git config user.name 'moonlight actions'
+          git config user.email 'actions@users.noreply.github.com'
+          git add public/
+          git diff --cached --quiet || git commit -m "qiita: what the last run actually did"
+          # ⚠ A push that loses a race must not turn a working run red. The
+          # next cycle pushes again within the hour and this file is rewritten
+          # from scratch every time, so nothing is lost by giving up here.
+          git push || echo "push lost a race - the next run rewrites this file"
+      - name: Fail if the publish step failed
+        # ⚠ After the write-back, never before: a failing step that aborts the
+        # job takes the diagnostics with it, which is the whole fault above.
+        if: always() && steps.gate.outputs.ready == 'true' && steps.publish.outcome == 'failure'
+        run: |
+          echo "The Qiita publish step failed. See public/last-run.txt on main."
+          exit 1
