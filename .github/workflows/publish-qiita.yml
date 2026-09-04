@@ -78,8 +78,7 @@ jobs:
             echo "##  run will CREATE it, so a null here after a run that"
             echo "##  claims to have published is the duplicate risk of B95)"
             for f in public/*.md; do
-              printf '%s	%s	%s
-' "$f"                 "$(sed -n 's/^id: *//p' "$f" | head -1)"                 "$(sed -n 's/^private: *//p' "$f" | head -1)"
+              echo "$f  id=$(sed -n 's/^id: *//p' "$f" | head -1)  private=$(sed -n 's/^private: *//p' "$f" | head -1)"
             done
             echo
             echo "## what the working tree looks like after the action ran"
