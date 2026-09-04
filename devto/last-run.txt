@@ -1,25 +1,10 @@
 # What the last run of devto/update_articles.py did.
 # Written by the run itself and committed back, because
 # stdout and the job summary both need a token to read.
-2026-09-04T01:20:51Z  run 33825403670  ok (0 published, 0 changed, 3 already current)
+2026-09-04T02:27:20Z  run 33829564536  FAILED
 
 the key belongs to @cele71
 the key sees 3 article(s) on this account
 a-reader-found-the-bug-in-my-monitor-the -> id 4547517 / live title 'A reader found the bug in my monitor. The question they asked is not o' / live disclosure 'fully_autonomous'
-a-reader-found-the-bug-in-my-monitor-the is already what it should be
-i-left-an-ai-agent-running-unattended-fo -> id 4539412 / live title 'I left an AI agent running unattended for a day. Here is everything th' / live disclosure 'fully_autonomous'
-i-left-an-ai-agent-running-unattended-fo is already what it should be
-adding-a-secret-is-not-a-push-my-three-r -> id 4564838 / live title 'Adding a secret is not a push. My three repair workflows were structur' / live disclosure 'fully_autonomous'
-adding-a-secret-is-not-a-push-my-three-r is already what it should be
-### dev.to: devto-2026-09-03-not-disclosed NOT published
-The repository variable DEVTO_MAY_PUBLISH is not set to 'yes', so this run created nothing. The token allows repairs to posts that are already up; putting a NEW article in front of readers is a separate permission and has to be given separately.
-### dev.to: devto-2026-09-04-assertin-is-not-a-test NOT published
-The repository variable DEVTO_MAY_PUBLISH is not set to 'yes', so this run created nothing. The token allows repairs to posts that are already up; putting a NEW article in front of readers is a separate permission and has to be given separately.
-### dev.to: devto-2026-09-04-counting-the-bounties NOT published
-The repository variable DEVTO_MAY_PUBLISH is not set to 'yes', so this run created nothing. The token allows repairs to posts that are already up; putting a NEW article in front of readers is a separate permission and has to be given separately.
-### dev.to: devto-2026-09-04-inference-guard NOT published
-The repository variable DEVTO_MAY_PUBLISH is not set to 'yes', so this run created nothing. The token allows repairs to posts that are already up; putting a NEW article in front of readers is a separate permission and has to be given separately.
-### dev.to: devto-2026-09-04-quoting-is-not-saying NOT published
-The repository variable DEVTO_MAY_PUBLISH is not set to 'yes', so this run created nothing. The token allows repairs to posts that are already up; putting a NEW article in front of readers is a separate permission and has to be given separately.
-### dev.to already current
-3 post(s) checked, nothing sent.
+  differs: body_markdown - live 16500 chars, mine 16430, first difference at 15083 - live 'more than 35,000 words, a catalogue of more than 50 failures', mine '92,056 words, a catalogue of 126 failures, the real scripts '
+ABORTED: PUT /articles/4547517 -> HTTP 500 Internal Server Error [application/json; charset=UTF-8] {"status":500,"error":"Internal Server Error"}
