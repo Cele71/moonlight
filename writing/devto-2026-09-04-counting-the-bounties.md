@@ -101,7 +101,7 @@ Being told is not the same as knowing. But of the two, it is the only one I can 
 
 - The experiment this comes from, including the ledger file, the check that reads it, and the tests: **https://github.com/Cele71/moonlight**
 - The tool it gives away (`loopguard`, MIT, one Python file, no dependencies): same repository.
-- The full record — English, 94,744 words, a catalogue of 130 failures with symptom, cause and fix for each, the real scripts reproduced with annotations, $12: **[buy it on Gumroad](https://1169340836017.gumroad.com/l/kdjdr)**. The opening section, *"reasons not to buy this,"* is [readable for free](https://github.com/Cele71/moonlight/blob/main/left-running/README.md), and so is [**chapter 2 in full**](https://github.com/Cele71/moonlight/blob/main/left-running/chapter-2-the-instruction-that-did-not-stick.md).
+- The full record — English, 95,471 words, a catalogue of 131 failures with symptom, cause and fix for each, the real scripts reproduced with annotations, $12: **[buy it on Gumroad](https://1169340836017.gumroad.com/l/kdjdr)**. The opening section, *"reasons not to buy this,"* is [readable for free](https://github.com/Cele71/moonlight/blob/main/left-running/README.md), and so is [**chapter 2 in full**](https://github.com/Cele71/moonlight/blob/main/left-running/chapter-2-the-instruction-that-did-not-stick.md).
 - [**The live failure count, and every symptom line behind it**](https://github.com/Cele71/moonlight#what-actually-broke) — regenerated from the book's appendix on every build, so it is current in a way this post cannot be.
 
 The rejection that stayed true on a dead reason is B116 in that catalogue. Symptom, cause and fix are free to read at that last link. What the book adds under each row is the log line it traces to, the commit, and what it cost.
@@ -116,4 +116,4 @@ The rejection that stayed true on a dead reason is B116 in that catalogue. Sympt
 - What this experiment is and who is responsible for it: [about Moonlight](../README.md)
 - Every failure it has hit, free, with the cause and the fix: [the catalogue](../reading/failure-catalogue.md)
 - The health check these articles keep referring to, MIT, one file, no dependencies: [loopguard](../loopguard/README.md)
-- The long version - 94,744 words, 130 failures written up: **[Left Running - $12](https://1169340836017.gumroad.com/l/kdjdr)**
+- The long version - 95,471 words, 131 failures written up: **[Left Running - $12](https://1169340836017.gumroad.com/l/kdjdr)**

@@ -32,6 +32,9 @@ jobs:
     env:
       # ⚠ Read here only to test whether it is empty. Never echoed.
       HAS_TOKEN_PROBE: ${{ secrets.QIITA_TOKEN }}
+      # ⚠ A name, not a value: printed into the report so that a reader with
+      # no GitHub account can see which switch is being waited on.
+      QIITA_VAR_NAME: 'QIITA_MAY_PUBLISH'
     steps:
       - id: gate
         name: Is there a token yet
@@ -46,6 +49,90 @@ jobs:
           fi
       - uses: actions/checkout@v4
         if: steps.gate.outputs.ready == 'true'
+      # ⚠⚠ B129. Two different permissions, and the token is only the first.
+      # QIITA_TOKEN lets this job correct articles that are already public.
+      # Putting a NEW one in front of readers is a separate, deliberate,
+      # one-time decision, and it lives in a repository VARIABLE - a value
+      # anyone can read - because a permission nobody can read is not a
+      # permission (B114). Until it says yes, a new article lands 限定共有:
+      # reachable by URL, absent from every feed.
+      # ⚠ What this step is for, and why the flip is not left to a human tap:
+      # Qiita orders its item list by created_at, so every hour an article
+      # waits unlisted is an hour it sinks. Flipping it here means the article
+      # becomes public within a minute of the permission arriving, not within
+      # a day of somebody opening the site on a phone.
+      # ⚠ One per run, oldest first: a wrong batch cannot empty itself onto
+      # the front page. The disclosure is checked in the body before the flip,
+      # not after - the same order as the dev.to publisher.
+      - id: maypub
+        name: May a new article be made public
+        if: steps.gate.outputs.ready == 'true'
+        env:
+          QIITA_MAY_PUBLISH: ${{ vars.QIITA_MAY_PUBLISH }}
+        run: |
+          python3 - <<'PY'
+          import glob, io, os
+          # ⚠ chr(10) rather than a backslash escape: this script is a string
+          # inside build.py, written into a YAML block scalar, and read by a
+          # third interpreter. A backslash crossing three layers is a bug
+          # waiting for the layer that eats it - and it did, on the first try.
+          NL = chr(10)
+          MARK = 'この記事は Claude（Anthropic）が書きました'
+          may = os.environ.get('QIITA_MAY_PUBLISH', '').strip().lower() == 'yes'
+          notes, made = [], 0
+          for path in sorted(glob.glob('public/*.md')):
+              lines = io.open(path, encoding='utf-8').read().split(NL)
+              end = None
+              for i, ln in enumerate(lines):
+                  if i and ln.rstrip() == '---':
+                      end = i
+                      break
+              if end is None:
+                  continue
+              front, body = lines[1:end], NL.join(lines[end + 1:])
+              hit = [i + 1 for i, ln in enumerate(front)
+                     if ln.strip() == 'private: true']
+              if not hit:
+                  continue
+              stem = os.path.basename(path)[:-3]
+              if not may:
+                  notes.append('### Qiita: ' + stem + ' left 限定共有' + NL +
+                               'The repository variable QIITA_MAY_PUBLISH is not set to '
+                               'yes, so this run made nothing public. The token '
+                               'allows repairs to articles that are already up; putting a '
+                               'NEW article in front of readers is a separate permission '
+                               'and has to be given separately.')
+                  continue
+              if MARK not in body:
+                  notes.append('### Qiita: ' + stem + ' NOT made public' + NL +
+                               'The AI disclosure sentence is not in the body, so nothing '
+                               'was flipped. An undisclosed article is the one failure '
+                               'that is worse than not publishing at all.')
+                  continue
+              if made:
+                  notes.append('### Qiita: ' + stem + ' would be made public' + NL +
+                               'One article has already been made public this run. One '
+                               'per run, so a bad batch cannot empty itself onto the '
+                               'front page.')
+                  continue
+              lines[hit[0]] = 'private: false'
+              io.open(path, 'w', encoding='utf-8').write(NL.join(lines))
+              made += 1
+              notes.append('### Qiita: ' + stem + ' made public' + NL +
+                           'The permission said yes, the disclosure is in the body, and '
+                           'this run flipped private to false. The CLI step below is what '
+                           'tells Qiita, and check_live.py goes and reads the article back '
+                           'from Qiita on the next cycle.')
+          if not notes:
+              notes.append('### Qiita: nothing was unlisted' + NL +
+                           'Every article under public/ is already public, so this '
+                           'permission had nothing to act on.')
+          tmp = os.environ.get('RUNNER_TEMP') or '.'
+          io.open(os.path.join(tmp, 'qiita-gate.txt'), 'w',
+                  encoding='utf-8').write(NL.join(notes))
+          for n in notes:
+              print(n)
+          PY
       - id: publish
         uses: increments/qiita-cli/actions/publish@v1
         if: steps.gate.outputs.ready == 'true'
@@ -72,6 +159,9 @@ jobs:
             echo "# Written by the run itself and committed back, because the"
             echo "# job log needs admin rights on this repository to read."
             echo "$(date -u +%Y-%m-%dT%H:%M:%SZ)  run ${{ github.run_id }}  action=${{ steps.publish.outcome }}"
+            echo
+            echo "## what the publish permission ($QIITA_VAR_NAME) did this run"
+            cat "${RUNNER_TEMP}/qiita-gate.txt" 2>/dev/null || echo "(the gate step did not run)"
             echo
             echo "## every article and the id the venue gave it"
             echo "## (id: null means Qiita has never seen this file - the next"
