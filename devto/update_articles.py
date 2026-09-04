@@ -116,7 +116,7 @@ def note(msg):
     LINES.append(msg)
 
 
-def call(method, path, token, payload=None):
+def call(method, path, token, payload=None, soft=False):
     """One request. The key travels in the api-key header and nowhere else.
 
     Never in the query string: a query string is written to every proxy log on
@@ -142,15 +142,37 @@ def call(method, path, token, payload=None):
         # says nothing about whether it came from the API or from the edge in
         # front of it. The content type separates those two: a JSON error is
         # the API refusing, an HTML one is a proxy refusing on its behalf.
-        fail('%s %s -> HTTP %s %s [%s] %s'
-             % (method, path, exc.code, exc.reason,
-                exc.headers.get('content-type', '?'),
-                detail.replace(token, '<redacted>') or '<empty body>'))
+        told = ('%s %s -> HTTP %s %s [%s] %s'
+                % (method, path, exc.code, exc.reason,
+                   exc.headers.get('content-type', '?'),
+                   detail.replace(token, '<redacted>') or '<empty body>'))
+        # WARNING B133. A 5xx is the venue having a bad minute, and it used to
+        # take every article after it down with it. On 2026-09-04 a PUT
+        # answered 500 on the second of three posts and the run aborted; the
+        # third was never attempted, and nothing outside said which posts were
+        # left behind - the log just stopped. The comment forty lines below
+        # already describes this exact shape for the read-back check and it
+        # was fixed only there.
+        # WARNING soft is 5xx ONLY. A 4xx is me being wrong - a bad field, a
+        # revoked key - and repeating a wrong write across eight live posts is
+        # worse than stopping at the first one.
+        if soft and 500 <= exc.code < 600:
+            note('  SKIPPED - ' + told)
+            return None
+        fail(told)
     except Exception as exc:
-        fail('%s %s -> %s' % (method, path, exc.__class__.__name__))
+        told = '%s %s -> %s' % (method, path, exc.__class__.__name__)
+        if soft:
+            note('  SKIPPED - ' + told)
+            return None
+        fail(told)
     try:
         return json.loads(raw)
     except ValueError:
+        if soft:
+            note('  SKIPPED - %s %s -> the reply was not JSON'
+                 % (method, path))
+            return None
         fail('%s %s -> the reply was not JSON' % (method, path))
 
 
@@ -418,6 +440,7 @@ def main():
     refuse = created_already()
     may = os.environ.get(MAY_PUBLISH_VAR, '').strip().lower() == MAY_PUBLISH_YES
     changed, same, made = 0, 0, 0
+    skipped = []
     for path in files:
         name = os.path.basename(path)
         with open(path, encoding='utf-8') as fh:
@@ -517,11 +540,17 @@ def main():
             else:
                 note('  differs: %s - live %r, mine %r'
                      % (key, got.get(key), fields[key]))
-        call('PUT', '/articles/%s' % got['id'], token, {'article': fields})
+        if call('PUT', '/articles/%s' % got['id'], token,
+                {'article': fields}, soft=True) is None:
+            skipped.append(want['slug'])
+            continue
 
         # Read it back. "The request returned 200" and "the post a reader
         # opens says this" are different claims (B77).
-        after = call('GET', '/articles/%s' % got['id'], token)
+        after = call('GET', '/articles/%s' % got['id'], token, soft=True)
+        if after is None:
+            skipped.append(want['slug'])
+            continue
         # WARNING B109. The three fields a reader is shown have to match
         # exactly. The body does not, and treating it the same way was wrong
         # twice over: the venue re-serialises the markdown it stores, and -
@@ -546,9 +575,23 @@ def main():
         changed += 1
         note('### Updated %s\n%d characters, disclosure %s, confirmed by '
              'reading the post back.' % (want['slug'], len(body), DISCLOSURE))
-    if not changed and not made:
+    if not changed and not made and not skipped:
         note('### dev.to already current\n%d post(s) checked, nothing sent.'
              % same)
+    # WARNING B133. The run carries on past a venue 5xx, and it must not end
+    # green when it did. A post the venue refused is a post still carrying the
+    # old text in front of readers, which is the whole thing this program is
+    # for - and the previous shape hid it by stopping, so the log simply ended
+    # and nothing named what had been left behind.
+    if skipped:
+        note('### dev.to: %d post(s) left as they were\nThe venue answered '
+             '5xx for these and the run went on to the rest rather than '
+             'stopping: %s. They still carry the old text; the next run '
+             'retries them.' % (len(skipped), ', '.join(skipped)))
+        record('FAILED (%d published, %d changed, %d already current, '
+               '%d skipped after a venue 5xx)'
+               % (made, changed, same, len(skipped)))
+        sys.exit(1)
     record('ok (%d published, %d changed, %d already current)'
            % (made, changed, same))
 

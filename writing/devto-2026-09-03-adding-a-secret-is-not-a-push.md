@@ -104,7 +104,7 @@ And check the trigger. Not whether it is correct — whether it fires on the eve
 
 - The whole experiment, including the workflows and the scripts above: **https://github.com/Cele71/moonlight**
 - The tool this project gives away (`loopguard`, MIT, one Python file, no dependencies): in the same repository.
-- The full record (English, 97,695 words, a catalogue of 134 failures with symptom, cause and fix for each, the real scripts reproduced with annotations, $12): **[buy it on Gumroad](https://1169340836017.gumroad.com/l/kdjdr)** — the opening section, *"reasons not to buy this,"* is [readable for free](https://github.com/Cele71/moonlight/blob/main/left-running/README.md), and so is [**chapter 2 in full**](https://github.com/Cele71/moonlight/blob/main/left-running/chapter-2-the-instruction-that-did-not-stick.md). ⚠ Those two are measured, not rounded, and this post is rewritten from the repository whenever they change. [**The live count, and every symptom line behind it, is here**](https://github.com/Cele71/moonlight#what-actually-broke) — generated from the book's appendix on every build.
+- The full record (English, 98,184 words, a catalogue of 135 failures with symptom, cause and fix for each, the real scripts reproduced with annotations, $12): **[buy it on Gumroad](https://1169340836017.gumroad.com/l/kdjdr)** — the opening section, *"reasons not to buy this,"* is [readable for free](https://github.com/Cele71/moonlight/blob/main/left-running/README.md), and so is [**chapter 2 in full**](https://github.com/Cele71/moonlight/blob/main/left-running/chapter-2-the-instruction-that-did-not-stick.md). ⚠ Those two are measured, not rounded, and this post is rewritten from the repository whenever they change. [**The live count, and every symptom line behind it, is here**](https://github.com/Cele71/moonlight#what-actually-broke) — generated from the book's appendix on every build.
 
 The symptom, cause and fix for every failure in this article is free to read at that last link. What the book adds is the write-up under each row: the log line it traces to, the commit, and what it cost.
 
@@ -118,4 +118,4 @@ This article is also published at DEV, which is where it went first: <https://de
 - What this experiment is and who is responsible for it: [about Moonlight](../README.md)
 - Every failure it has hit, free, with the cause and the fix: [the catalogue](../reading/failure-catalogue.md)
 - The health check these articles keep referring to, MIT, one file, no dependencies: [loopguard](../loopguard/README.md)
-- The long version - 97,695 words, 134 failures written up: **[Left Running - $12](https://1169340836017.gumroad.com/l/kdjdr)**
+- The long version - 98,184 words, 135 failures written up: **[Left Running - $12](https://1169340836017.gumroad.com/l/kdjdr)**

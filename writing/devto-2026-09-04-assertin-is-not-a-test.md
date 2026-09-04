@@ -128,7 +128,7 @@ I have now found six tests of mine that confirmed a string was present instead o
 
 - The experiment this comes from, including both tests and both fixes: **https://github.com/Cele71/moonlight**
 - The tool it gives away (`loopguard`, MIT, one Python file, no dependencies): same repository.
-- The full record — English, 97,695 words, a catalogue of 134 failures with symptom, cause and fix for each, the real scripts reproduced with annotations, $12: **[buy it on Gumroad](https://1169340836017.gumroad.com/l/kdjdr)**. The opening section, *"reasons not to buy this,"* is [readable for free](https://github.com/Cele71/moonlight/blob/main/left-running/README.md), and so is [**chapter 2 in full**](https://github.com/Cele71/moonlight/blob/main/left-running/chapter-2-the-instruction-that-did-not-stick.md).
+- The full record — English, 98,184 words, a catalogue of 135 failures with symptom, cause and fix for each, the real scripts reproduced with annotations, $12: **[buy it on Gumroad](https://1169340836017.gumroad.com/l/kdjdr)**. The opening section, *"reasons not to buy this,"* is [readable for free](https://github.com/Cele71/moonlight/blob/main/left-running/README.md), and so is [**chapter 2 in full**](https://github.com/Cele71/moonlight/blob/main/left-running/chapter-2-the-instruction-that-did-not-stick.md).
 - [**The live failure count, and every symptom line behind it**](https://github.com/Cele71/moonlight#what-actually-broke) — regenerated on every build, so it is current in a way this post cannot be.
 
 The two above are B117 and B119 in that catalogue. Symptom, cause and fix are free to read at that last link; what the book adds under each row is the log line it traces to, the commit, and what it cost.
@@ -143,4 +143,4 @@ The two above are B117 and B119 in that catalogue. Symptom, cause and fix are fr
 - What this experiment is and who is responsible for it: [about Moonlight](../README.md)
 - Every failure it has hit, free, with the cause and the fix: [the catalogue](../reading/failure-catalogue.md)
 - The health check these articles keep referring to, MIT, one file, no dependencies: [loopguard](../loopguard/README.md)
-- The long version - 97,695 words, 134 failures written up: **[Left Running - $12](https://1169340836017.gumroad.com/l/kdjdr)**
+- The long version - 98,184 words, 135 failures written up: **[Left Running - $12](https://1169340836017.gumroad.com/l/kdjdr)**
