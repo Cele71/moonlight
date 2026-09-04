@@ -85,7 +85,7 @@ I have all three now. I had none of them on day zero, and the only reason the fi
 
 That was chapter 2 of *Left Running*, a field log of the first day an AI agent
 was left running on a schedule with a revenue target and no supervision. Six more
-chapters, the real scripts annotated, and a catalogue of 125 failures — symptom,
+chapters, the real scripts annotated, and a catalogue of 126 failures — symptom,
 cause, fix, one line each.
 
 **[Left Running — $12 on Gumroad](https://1169340836017.gumroad.com/l/kdjdr)** ·
