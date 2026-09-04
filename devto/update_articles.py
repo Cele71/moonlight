@@ -383,7 +383,7 @@ def record_created(stem, url):
         note('could not write %s: %s' % (CREATED_LOG, exc.__class__.__name__))
 
 
-def create_article(want, body, token):
+def create_article(want, body, token, problems):
     """POST one new article, published, and read it back.
 
     WARNING This is the only place in this program that puts something in
@@ -408,15 +408,41 @@ def create_article(want, body, token):
     wrong = [key for key in ('title', 'tags', 'ai_disclosure_level')
              if after.get(key) != fields[key]]
     if wrong:
-        fail('%s was created at %s but reads back different in: %s - it is '
-             'live, so this needs looking at, not retrying'
-             % (want['stem'], url, ', '.join(sorted(wrong))))
-    if not after.get('published'):
-        fail('%s was created at %s but is not published - a draft reaches '
-             'nobody' % (want['stem'], url))
-    note('%s reads back published, titled %r, disclosure %r'
-         % (want['stem'], (after.get('title') or '')[:70],
-            after.get('ai_disclosure_level')))
+        problems.append('%s was created at %s but reads back different in: %s '
+                        '- it is live, so this needs looking at, not retrying'
+                        % (want['stem'], url, ', '.join(sorted(wrong))))
+    # WARNING B135. This used to read `after.get('published')`. GET
+    # /articles/{id} has no `published` key - measured 2026-09-04: the response
+    # carries published_at and published_timestamp and no boolean of that name.
+    # So .get() returned None, None is falsy, and a question the endpoint had
+    # never been asked was recorded as the answer `no`. It aborted the run on an
+    # article that had gone public that same second, and printed "is not
+    # published" about a post a reader could already open.
+    # WARNING The general shape, which is the part worth keeping: a missing key
+    # is not a "no". This now says which of three things happened - the venue
+    # said yes, said no, or did not say - and only the middle one is a fault.
+    # WARNING Nothing found after the POST ends the run any more. The article is
+    # live by then; stopping only abandons every file behind it, which is B133's
+    # fault with a different trigger. Faults go into `problems`, the run
+    # finishes, and it ends FAILED naming them.
+    if 'published' in after:
+        live = bool(after['published'])
+    elif 'published_at' in after:
+        live = bool(after['published_at'])
+    else:
+        live = None
+    if live is None:
+        note('  %s: the read-back carries neither `published` nor '
+             '`published_at`, so whether it is a draft was NOT checked - that '
+             'is "did not look", not "it is a draft". Keys returned: %s'
+             % (want['stem'], ', '.join(sorted(after)) or '(none)'))
+    elif not live:
+        problems.append('%s was created at %s and the venue reads it back as a '
+                        'draft - a draft reaches nobody' % (want['stem'], url))
+    else:
+        note('%s reads back published, titled %r, disclosure %r'
+             % (want['stem'], (after.get('title') or '')[:70],
+                after.get('ai_disclosure_level')))
     return url
 
 
@@ -441,6 +467,7 @@ def main():
     may = os.environ.get(MAY_PUBLISH_VAR, '').strip().lower() == MAY_PUBLISH_YES
     changed, same, made = 0, 0, 0
     skipped = []
+    problems = []
     for path in files:
         name = os.path.basename(path)
         with open(path, encoding='utf-8') as fh:
@@ -494,7 +521,7 @@ def main():
                 continue
             else:
                 made += 1
-                create_article(want, body, token)
+                create_article(want, body, token, problems)
                 continue
 
         got = live_article(want, seen, token)
@@ -583,14 +610,24 @@ def main():
     # old text in front of readers, which is the whole thing this program is
     # for - and the previous shape hid it by stopping, so the log simply ended
     # and nothing named what had been left behind.
+    # WARNING B135. A create whose read-back disagreed with what was sent.
+    # The post is live either way, so this is reported and not retried - but the
+    # run must not end green while a live post is wrong.
+    if problems:
+        note('### dev.to: %d newly published post(s) did not read back as '
+             'sent\nThey are live. Nothing here is retried automatically - a '
+             'person has to look:\n%s'
+             % (len(problems), '\n'.join('- ' + p for p in problems)))
     if skipped:
         note('### dev.to: %d post(s) left as they were\nThe venue answered '
              '5xx for these and the run went on to the rest rather than '
              'stopping: %s. They still carry the old text; the next run '
              'retries them.' % (len(skipped), ', '.join(skipped)))
+    if skipped or problems:
         record('FAILED (%d published, %d changed, %d already current, '
-               '%d skipped after a venue 5xx)'
-               % (made, changed, same, len(skipped)))
+               '%d skipped after a venue 5xx, %d create(s) that did not read '
+               'back as sent)'
+               % (made, changed, same, len(skipped), len(problems)))
         sys.exit(1)
     record('ok (%d published, %d changed, %d already current)'
            % (made, changed, same))
