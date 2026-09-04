@@ -26,6 +26,31 @@ on:
 permissions:
   contents: write
 
+# ⚠⚠ B131. Three identical articles exist at this venue, created 11:44:47,
+# 11:57:53 and 12:03:43 on 2026-09-04. The file was pushed carrying `id: null`;
+# the CLI CREATES when the id is empty and writes the new id back into the
+# file, and that write-back is a commit that has to win a push race. Three
+# pushes inside twenty minutes started three runs that overlapped, every one of
+# them read `id: null`, and every one of them created. ⚠ Only one of the three
+# ids survived into the repository, so my own files - which carry one id each -
+# cannot see the other two at all. Without a queue this repeats every time two
+# pushes land close together, and once QIITA_MAY_PUBLISH is on it repeats in
+# the feed rather than out of sight.
+# ⚠ cancel-in-progress is false on purpose: cancelling a run that has already
+# POSTed an article would lose the id write-back, which is the fault itself.
+# ⚠⚠ One group NAME across all three workflows, not one per workflow. The
+# second half of B131 is that these three all end by committing to main and
+# every one of them swallows a lost push race - `|| echo 'push lost a race'` -
+# so that a race cannot redden a run that did its work. Measured, not assumed:
+# on 2026-09-04 the Qiita write-back landed at 09:51Z and the dev.to one, from
+# the same push, never arrived. Swallowing the race is right for a diagnostic
+# and wrong for the id, and the two travel in the same commit. A shared group
+# means only one of the three can be writing to main at a time, so there is no
+# race to swallow.
+concurrency:
+  group: moonlight-writes-main
+  cancel-in-progress: false
+
 jobs:
   publish:
     runs-on: ubuntu-latest
@@ -190,6 +215,24 @@ jobs:
           if items:
               lines.append('  total %d view(s) across %d article(s)'
                            % (total, counted))
+          # ⚠⚠ B131/B95. Taking the audience meant asking the venue for its
+          # whole list for the first time, and the list held three copies of
+          # one article. Nothing was looking: my own ledger holds one id per
+          # file, so a second copy the venue made is invisible to every check
+          # that starts from my files. This starts from the VENUE's list, which
+          # is the only place a duplicate can be seen at all.
+          bytitle = {}
+          for it in items:
+              bytitle.setdefault((it.get('title') or '').strip(), []).append(
+                  str(it.get('id')))
+          dupes = sorted((t, ids) for t, ids in bytitle.items() if len(ids) > 1)
+          if dupes:
+              lines.append('DUPLICATE: %d title(s) exist more than once on '
+                           'this account. ⚠ B95 - the venue made a second copy '
+                           'and my files, which hold one id each, cannot see '
+                           'it.' % len(dupes))
+              for title, ids in dupes:
+                  lines.append('  %s -> %s' % (title[:36], ' '.join(ids)))
           if missing:
               lines.append('  %d article(s) came back with no '
                            'page_views_count. Absent is not zero.' % missing)

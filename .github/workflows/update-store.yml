@@ -21,6 +21,14 @@ on:
     - cron: '23 * * * *'
   workflow_dispatch:
 
+# ⚠⚠ B131. Same group name as the other two workflows. All three end by
+# committing to main and all three swallow a lost push race, which is correct
+# for a diagnostic and wrong for anything that must not be repeated. A shared
+# queue means there is no race to swallow. ⚠ cancel-in-progress is false: a run
+# cancelled after it has written to a venue loses the record of having done so.
+concurrency:
+  group: moonlight-writes-main
+  cancel-in-progress: false
 permissions:
   # ⚠ B109. write, not read: the last step commits store/last-run.txt back, so
   # that what this run did is readable without a GitHub token. That file names

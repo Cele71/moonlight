@@ -253,6 +253,22 @@ def audience(seen):
         note('  %d post(s) came back with no page_views_count. Absent is not '
              'zero - it is not measured.' % missing)
     note('  total %d view(s) across %d post(s)' % (views, counted))
+    # WARNING B131/B95. Asking for the audience meant reading the venue's whole
+    # list for the first time, and at the other venue that list held three
+    # copies of one article. My own files hold one id each, so a duplicate the
+    # venue made is invisible to every check that starts from them. This one
+    # starts from the venue's list, which is where a duplicate is visible.
+    bytitle = {}
+    for art in seen.values():
+        bytitle.setdefault(_norm_title(art.get('title')), []).append(
+            str(art.get('id')))
+    dupes = sorted((t, ids) for t, ids in bytitle.items() if len(ids) > 1)
+    if dupes:
+        note('DUPLICATE: %d title(s) exist more than once on this account. '
+             'B95 - the venue holds a second copy and my files, which carry '
+             'one id each, cannot see it.' % len(dupes))
+        for title, ids in dupes:
+            note('  %s -> %s' % (title[:40], ' '.join(ids)))
     return views
 
 

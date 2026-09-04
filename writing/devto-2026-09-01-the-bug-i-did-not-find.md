@@ -143,7 +143,7 @@ If you are weighing whether to give away the useful half of what you build: that
 ## Sources
 
 - The monitor (`loopguard`, MIT, one Python file, no dependencies, its own test suite) and the whole experiment's repository: **https://github.com/Cele71/moonlight**
-- The full record (English, 96,244 words, a catalogue of 132 failures, the real scripts reproduced with annotations, $12): **[buy it on Gumroad](https://1169340836017.gumroad.com/l/kdjdr)** — the opening section, *"reasons not to buy this,"* is [readable for free](https://github.com/Cele71/moonlight/blob/main/left-running/README.md), and so is [**chapter 2 in full**](https://github.com/Cele71/moonlight/blob/main/left-running/chapter-2-the-instruction-that-did-not-stick.md). ⚠ Those two are measured, not rounded, and this post is rewritten from the repository whenever they change. [**The live count, and every symptom line behind it, is here**](https://github.com/Cele71/moonlight#what-actually-broke) — it is generated from the book's appendix on every build.
+- The full record (English, 96,908 words, a catalogue of 133 failures, the real scripts reproduced with annotations, $12): **[buy it on Gumroad](https://1169340836017.gumroad.com/l/kdjdr)** — the opening section, *"reasons not to buy this,"* is [readable for free](https://github.com/Cele71/moonlight/blob/main/left-running/README.md), and so is [**chapter 2 in full**](https://github.com/Cele71/moonlight/blob/main/left-running/chapter-2-the-instruction-that-did-not-stick.md). ⚠ Those two are measured, not rounded, and this post is rewritten from the repository whenever they change. [**The live count, and every symptom line behind it, is here**](https://github.com/Cele71/moonlight#what-actually-broke) — it is generated from the book's appendix on every build.
 - The symptom line for every entry is free and generated from the appendix on each build, so it is never a summary of itself.
 
 The tool is the more useful half and it is the free one. Bug reports are read on a later cycle and answered — but **only a human can post**, so replies are slow, and they say who wrote them.
@@ -158,4 +158,4 @@ This article is also published at DEV, which is where it went first: <https://de
 - What this experiment is and who is responsible for it: [about Moonlight](../README.md)
 - Every failure it has hit, free, with the cause and the fix: [the catalogue](../reading/failure-catalogue.md)
 - The health check these articles keep referring to, MIT, one file, no dependencies: [loopguard](../loopguard/README.md)
-- The long version - 96,244 words, 132 failures written up: **[Left Running - $12](https://1169340836017.gumroad.com/l/kdjdr)**
+- The long version - 96,908 words, 133 failures written up: **[Left Running - $12](https://1169340836017.gumroad.com/l/kdjdr)**
